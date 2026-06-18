@@ -1,4 +1,4 @@
-// Configura o worker do PDF.js obrigatório para a biblioteca funcionar
+// Worker atualizado e configurado corretamente
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
@@ -12,30 +12,34 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         return;
     }
 
-    // Altera o estado do botão para o usuário saber que está processando
+    // Desativa o botão para evitar cliques duplos
     btn.disabled = true;
     btn.innerText = 'Processando e Comparando...';
-    resultadoDiv.innerHTML = 'Extraindo textos dos PDFs...';
+    resultadoDiv.innerHTML = 'Lendo o primeiro PDF (Versão Antiga)...';
 
     try {
-        // 1. Extrai o texto de ambos os PDFs
+        // 1. Extrai o texto do primeiro PDF
         const textoAntigo = await extrairTextoPDF(fileAntigo);
-        resultadoDiv.innerHTML = 'Texto antigo extraído. Extraindo novo texto...';
         
+        // Atualiza o status
+        resultadoDiv.innerHTML = 'Primeiro PDF lido com sucesso! Lendo o segundo PDF (Versão Nova)...';
+        
+        // 2. Extrai o texto do segundo PDF
         const textoNovo = await extrairTextoPDF(fileNovo);
-        resultadoDiv.innerHTML = 'Comparando as versões...';
+        
+        // Atualiza o status
+        resultadoDiv.innerHTML = 'Comparando as diferenças nos textos...';
 
-        // 2. Faz a comparação palavra por palavra usando a biblioteca jsdiff
+        // 3. Faz a comparação palavra por palavra
         const diferencas = Diff.diffWords(textoAntigo, textoNovo);
 
-        // 3. Renderiza o resultado na tela com as cores corretas
-        resultadoDiv.innerHTML = ''; // Limpa o carregando
+        // 4. Renderiza o resultado
+        resultadoDiv.innerHTML = ''; 
         
         if (diferencas.length === 1 && !diferencas[0].added && !diferencas[0].removed) {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif;">Nenhuma alteração encontrada! Os PDFs são idênticos em texto.</span>';
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração encontrada! Os textos são 100% idênticos.</span>';
         } else {
             diferencas.forEach((part) => {
-                // Cria um elemento span para cada pedaço de texto
                 const span = document.createElement('span');
                 span.textContent = part.value;
 
@@ -44,35 +48,45 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 } else if (part.removed) {
                     span.className = 'removed';
                 }
-                
                 resultadoDiv.appendChild(span);
             });
         }
 
     } catch (error) {
-        console.error(error);
-        resultadoDiv.innerHTML = '<span style="color: #c0392b;">Ocorreu um erro ao processar os arquivos. Certifique-se de que não são PDFs protegidos ou apenas imagens.</span>';
+        console.error("Erro detalhado:", error);
+        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif; font-weight: bold;">
+            Ih, travou! Erro ao processar: ${error.message}. <br><br>
+            Certifique-se de que o segundo PDF não é apenas uma imagem digitalizada ou está protegido por senha.
+        </span>`;
     } finally {
-        // Restaura o botão
+        // Libera o botão novamente
         btn.disabled = false;
         btn.innerText = 'Comparar Versões';
     }
 });
 
-// Função auxiliar para ler o PDF e juntar o texto de todas as páginas
+// Função de extração otimizada com tratamento de erro por página
 async function extrairTextoPDF(file) {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    let textoCompleto = '';
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        let textoCompleto = '';
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-        const pagina = await pdf.getPage(i);
-        const conteudoTexto = await pagina.getTextContent();
-        
-        // Junta os itens de texto da página com espaços
-        const textoPagina = conteudoTexto.items.map(item => item.str).join(' ');
-        textoCompleto += textoPagina + '\n'; // Adiciona quebra de linha entre páginas
+        for (let i = 1; i <= pdf.numPages; i++) {
+            try {
+                const pagina = await pdf.getPage(i);
+                const conteudoTexto = await pagina.getTextContent();
+                const textoPagina = conteudoTexto.items.map(item => item.str).join(' ');
+                textoCompleto += textoPagina + '\n';
+            } catch (pageError) {
+                console.warn(`Erro na página ${i}, pulando para a próxima...`, pageError);
+                // Se uma página falhar (por causa de um gráfico corrompido, ex), o sistema pula ela e não trava tudo
+                continue;
+            }
+        }
+        return textoCompleto;
+    } catch (err) {
+        throw new Error(`Falha ao abrir o arquivo "${file.name}" (${err.message})`);
     }
-
-    return textoCompleto;
 }
