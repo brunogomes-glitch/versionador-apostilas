@@ -72,7 +72,7 @@ button:disabled {
     padding: 20px;
     border-radius: 6px;
     min-height: 150px;
-    white-space: pre-wrap; /* Mantém as quebras de linha do PDF */
+    white-space: pre-wrap;
     font-family: monospace;
     line-height: 1.6;
 }
