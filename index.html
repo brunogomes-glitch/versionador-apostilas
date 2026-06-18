@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <h1>Versionador de Apostilas</h1>
-        <p class="subtitle">Faça o upload de duas versões do PDF para comparar as alterações de texto.</p>
+        <p class="subtitle">Faça o upload de duas versões do PDF para comparar e salvar o histórico.</p>
         
         <div class="upload-section">
             <div class="upload-box">
@@ -22,12 +22,21 @@
             </div>
         </div>
 
-        <button id="btn-comparar">Comparar Versões</button>
+        <button id="btn-comparar">Comparar e Versionar</button>
 
         <div class="result-section">
-            <h2>Relatório de Alterações</h2>
+            <h2>Relatório da Comparação Atual</h2>
             <div id="resultado-diff" class="diff-box">
-                <span class="placeholder">Aguardando o upload e comparação dos arquivos...</span>
+                <span class="placeholder">Aguardando comparação...</span>
+            </div>
+        </div>
+
+        <hr style="margin: 40px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+        <div class="history-section">
+            <h2>Histórico de Versões Salvas (Firebase)</h2>
+            <div id="lista-historico">
+                <p class="placeholder">Carregando histórico do banco de dados...</p>
             </div>
         </div>
     </div>
@@ -35,6 +44,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
 </body>
 </html>
