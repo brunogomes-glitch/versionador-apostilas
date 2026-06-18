@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Versionador de Apostilas</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Versionador de Apostilas</h1>
+        <p class="subtitle">Faça o upload de duas versões do PDF para comparar as alterações de texto.</p>
+        
+        <div class="upload-section">
+            <div class="upload-box">
+                <h3>1. Versão Anterior (Base)</h3>
+                <input type="file" id="pdf-antigo" accept=".pdf">
+            </div>
+            <div class="upload-box">
+                <h3>2. Nova Versão (Atualizada)</h3>
+                <input type="file" id="pdf-novo" accept=".pdf">
+            </div>
+        </div>
+
+        <button id="btn-comparar">Comparar Versões</button>
+
+        <div class="result-section">
+            <h2>Relatório de Alterações</h2>
+            <div id="resultado-diff" class="diff-box">
+                <span class="placeholder">Aguardando o upload e comparação dos arquivos...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Carregando as Bibliotecas Necessárias -->
+    <!-- 1. PDF.js para ler os PDFs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- 2. Diff para comparar os textos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
+    
+    <!-- Nosso script com a lógica -->
+    <script src="app.js"></script>
+</body>
+</html>
