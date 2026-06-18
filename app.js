@@ -1,4 +1,4 @@
-// CONFIGURAÇÃO DO SEU FIREBASE (Chaves oficiais extraídas da imagem)
+// CONFIGURAÇÃO DO SEU FIREBASE
 const firebaseConfig = {
     apiKey: "AIzaSyD5N8D108XMCnWytT55XlcR6RE728S6qa5M",
     authDomain: "versionador-apostilas.firebaseapp.com",
@@ -8,7 +8,6 @@ const firebaseConfig = {
     appId: "1:14543972647:web:1aadf3f86bbcdd1d2833b2"
 };
 
-// Inicializando Firebase através dos módulos oficiais CDN
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
@@ -18,11 +17,9 @@ const db = getFirestore(app);
 const pdfjsLib = window['pdfjs-dist/build/pdf'];
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// Variável para armazenar o texto do relatório temporariamente para o download
 let relatorioAtualTexto = "";
-let nomeDoArquivoNovo = "relatorio_mudancas";
+let tagVersaoFinal = "1.0.0";
 
-// Carrega o histórico de versões salvas assim que a página abre
 window.addEventListener('DOMContentLoaded', carregarHistorico);
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
@@ -31,6 +28,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     const btn = document.getElementById('btn-comparar');
     const btnDownload = document.getElementById('btn-download-relatorio');
     const resultadoDiv = document.getElementById('resultado-diff');
+    const versaoBaseInput = document.getElementById('versao-base').value.trim();
 
     if (!fileAntigo || !fileNovo) {
         alert('Por favor, selecione os dois arquivos PDF para comparar.');
@@ -39,10 +37,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
     btn.disabled = true;
     btn.innerText = 'Processando...';
-    btnDownload.style.display = 'none'; // Esconde o botão de baixar relatório no início
-    resultadoDiv.innerHTML = 'Iniciando leitura otimizada para arquivos grandes...';
-    relatorioAtualTexto = ""; // Limpa relatório anterior
-    nomeDoArquivoNovo = fileNovo.name.replace(".pdf", "");
+    btnDownload.style.display = 'none'; 
+    resultadoDiv.innerHTML = 'Analisando arquivos...';
+    relatorioAtualTexto = ""; 
 
     try {
         const arrayBufferAntigo = await fileAntigo.arrayBuffer();
@@ -54,14 +51,11 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
         let resultadoHTML = '';
         let resumoAlteracoes = ''; 
+        
+        let contemAdicao = false;
+        let contemRemocao = false;
 
-        // Cabeçalho do relatório de texto para download
-        relatorioAtualTexto += `==================================================\n`;
-        relatorioAtualTexto += `RELATÓRIO DE VERSIONAMENTO - MUDANÇAS ENCONTRADAS\n`;
-        relatorioAtualTexto += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
-        relatorioAtualTexto += `Arquivo Original Base: ${fileAntigo.name}\n`;
-        relatorioAtualTexto += `Arquivo Atualizado: ${fileNovo.name}\n`;
-        relatorioAtualTexto += `==================================================\n\n`;
+        let corpoDiferencasMarkdown = "";
 
         for (let i = 1; i <= totalPaginas; i++) {
             resultadoDiv.innerHTML = `<b>Processando e Comparando:</b> Página ${i} de ${totalPaginas}...`;
@@ -85,79 +79,107 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             const temMudanca = diferencasPagina.some(part => part.added || part.removed);
 
             if (temMudanca) {
-                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Alterações na Página ${i}]:</b><br>`;
+                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Página ${i}]:</b><br>`;
                 resumoAlteracoes += `[Página ${i}]: `;
-                relatorioAtualTexto += `[ALTERAÇÕES NA PÁGINA ${i}]:\n`;
+                corpoDiferencasMarkdown += `### 📄 Página ${i}\n\`\`\`diff\n`;
                 
                 diferencasPagina.forEach((part) => {
                     if (part.added) {
                         resultadoHTML += `<span class="added">${part.value}</span>`;
                         resumoAlteracoes += `(+) ${part.value} `;
-                        relatorioAtualTexto += `   [ADICIONADO]: ${part.value}\n`;
+                        corpoDiferencasMarkdown += `+ ${part.value.trim()}\n`;
+                        contemAdicao = true;
                     } else if (part.removed) {
                         resultadoHTML += `<span class="removed">${part.value}</span>`;
                         resumoAlteracoes += `(-) ${part.value} `;
-                        relatorioAtualTexto += `   [REMOVIDO]: ${part.value}\n`;
+                        corpoDiferencasMarkdown += `- ${part.value.trim()}\n`;
+                        contemRemocao = true;
                     } else {
-                        resultadoHTML += `<span> ${part.value.substring(0, 30)}... </span>`;
+                        resultadoHTML += `<span> ${part.value.substring(0, 20)}... </span>`;
                     }
                 });
                 resultadoHTML += `</div>`;
                 resumoAlteracoes += '\n';
-                relatorioAtualTexto += `--------------------------------------------------\n`;
+                corpoDiferencasMarkdown += `\`\`\`\n\n`;
             }
         }
 
         if (resultadoHTML === '') {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada nas páginas! Os arquivos são idênticos.</span>';
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração encontrada. Os arquivos são idênticos.</span>';
         } else {
-            resultadoDiv.innerHTML = resultadoHTML;
+            // Calcula o SemVer automaticamente baseado no tipo de mudança
+            tagVersaoFinal = calcularNovaVersao(versaoBaseInput, contemAdicao, contemRemocao);
 
-            // Mostra o botão para baixar o relatório txt
+            // Montagem do Relatório Final estruturado estilo GitHub Releases
+            relatorioAtualTexto += `# 🚀 Release [v${tagVersaoFinal}]\n\n`;
+            relatorioAtualTexto += `* **Data:** ${new Date().toLocaleString('pt-BR')}\n`;
+            relatorioAtualTexto += `* **Versão Anterior:** \`${versaoBaseInput}\` ➔ **Nova Versão:** \`${tagVersaoFinal}\`\n`;
+            relatorioAtualTexto += `* **Arquivo Atualizado:** \`${fileNovo.name}\`\n\n`;
+            relatorioAtualTexto += `## 🛠 Log de Alterações (Diff)\n\n`;
+            relatorioAtualTexto += corpoDiferencasMarkdown;
+
+            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão sugerida: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">${tagVersaoFinal}</span></b></p>` + resultadoHTML;
+
             btnDownload.style.display = 'inline-block';
 
-            // SALVAMENTO NO FIREBASE
-            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Salvando nova versão no Firebase...</b></p>';
+            // Salva no Firebase incluindo a tag da versão calculada
+            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Salvando dados no Firebase...</b></p>';
             
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,
+                versaoSemver: tagVersaoFinal,
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date(),
                 mudancas: resumoAlteracoes
             });
 
-            resultadoDiv.innerHTML += '<p style="color: #27ae60;"><b>✓ Versão gravada com sucesso no histórico!</b></p>';
+            resultadoDiv.innerHTML += '<p style="color: #27ae60;"><b>✓ Versão ' + tagVersaoFinal + ' gravada com sucesso!</b></p>';
             carregarHistorico();
         }
 
     } catch (error) {
-        console.error("Erro no processamento:", error);
-        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro ao processar:</b> ${error.message}</span>`;
+        console.error(error);
+        resultadoDiv.innerHTML = `Erro ao processar: ${error.message}`;
     } finally {
         btn.disabled = false;
         btn.innerText = 'Comparar e Versionar';
     }
 });
 
-// Ação de clique do botão para fazer o download do arquivo de texto do relatório
+// Algoritmo de Versionamento Semântico Automatizado
+function calcularNovaVersao(versaoAtual, temAdicao, temRemocao) {
+    let partes = versaoAtual.split('.');
+    if (partes.length !== 3) partes = [1, 0, 0]; // Fallback caso o input esteja errado
+    
+    let major = parseInt(partes[0]) || 1;
+    let minor = parseInt(partes[1]) || 0;
+    let patch = parseInt(partes[2]) || 0;
+
+    if (temAdicao) {
+        // Conteúdo novo adicionado aumenta o Minor (ex: 1.0.0 -> 1.1.0)
+        minor += 1;
+        patch = 0;
+    } else if (temRemocao) {
+        // Apenas correções ou exclusões aumentam o Patch (ex: 1.0.0 -> 1.0.1)
+        patch += 1;
+    }
+    
+    return `${major}.${minor}.${patch}`;
+}
+
 document.getElementById('btn-download-relatorio').addEventListener('click', () => {
     if (!relatorioAtualTexto) return;
-    
-    // Cria um arquivo de texto virtual em memória
-    const blob = new Blob([relatorioAtualTexto], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([relatorioAtualTexto], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    
-    // Força o navegador a fazer o download dele
     const link = document.createElement('a');
     link.href = url;
-    link.download = `relatorio_mudancas_${nomeDoArquivoNovo}.txt`;
+    link.download = `RELEASE_v${tagVersaoFinal}.md`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 });
 
-// Busca os dados armazenados na nuvem do Firebase e monta as caixinhas na tela
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
@@ -173,19 +195,19 @@ async function carregarHistorico() {
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
             const item = document.createElement('div');
-            item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #3498db; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
+            item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             item.innerHTML = `
-                <strong>Arquivo atualizado:</strong> ${versao.nomeArquivo} <br>
+                <span style="background: #2c3e50; color: #fff; padding: 2px 6px; font-size: 12px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver || '1.0.0'}</span>
+                <strong>Arquivo:</strong> ${versao.nomeArquivo} <br>
                 <strong>Modificado em:</strong> ${versao.data} <br>
                 <details style="margin-top: 8px;">
-                    <summary style="cursor:pointer; color: #2980b9; font-weight: 500;">Ver histórico detalhado das alterações</summary>
+                    <summary style="cursor:pointer; color: #2980b9; font-weight: 500;">Ver diff em texto da versão</summary>
                     <pre style="background: #fff; padding: 10px; border: 1px solid #e2e8f0; margin-top: 5px; white-space: pre-wrap; font-family: monospace; font-size: 13px; color: #4a5568;">${versao.mudancas}</pre>
                 </details>
             `;
             listaDiv.appendChild(item);
         });
     } catch (e) {
-        listaDiv.innerHTML = '<p style="color: red;">Erro ao carregar o histórico de versões do Firebase. Verifique se as Regras de Segurança do Firestore permitem escrita/leitura.</p>';
-        console.error(e);
+        listaDiv.innerHTML = '<p style="color: red;">Erro ao carregar o histórico.</p>';
     }
 }
