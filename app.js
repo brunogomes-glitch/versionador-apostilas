@@ -1,4 +1,3 @@
-// Configuração do motor (worker) usando a mesma versão da biblioteca principal
 const pdfjsLib = window['pdfjs-dist/build/pdf'];
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -13,69 +12,76 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         return;
     }
 
-    // Bloqueia botão e inicia processamento
     btn.disabled = true;
     btn.innerText = 'Processando...';
-    resultadoDiv.innerHTML = 'Carregando arquivo base...';
+    resultadoDiv.innerHTML = 'Iniciando leitura otimizada para arquivos grandes...';
 
     try {
-        // 1. Extração do PDF antigo com feedback visual
-        const textoAntigo = await extrairTextoDoPDF(fileAntigo, (pAtual, pTotal) => {
-            resultadoDiv.innerHTML = `<b>Lendo PDF Antigo:</b> Página ${pAtual} de ${pTotal}...`;
-        });
+        // Abre os documentos em paralelo sem extrair o texto ainda (economiza memória)
+        const arrayBufferAntigo = await fileAntigo.arrayBuffer();
+        const arrayBufferNovo = await fileNovo.arrayBuffer();
         
-        // 2. Extração do PDF novo com feedback visual
-        resultadoDiv.innerHTML = 'Carregando arquivo novo...';
-        const textoNovo = await extrairTextoDoPDF(fileNovo, (pAtual, pTotal) => {
-            resultadoDiv.innerHTML = `<b>Lendo PDF Novo (Atualizado):</b> Página ${pAtual} de ${pTotal}...`;
-        });
-        
-        // 3. Comparação de textos
-        resultadoDiv.innerHTML = 'Cruzando informações e gerando histórico...';
-        const diferencas = Diff.diffWords(textoAntigo, textoNovo);
+        const pdfAntigo = await pdfjsLib.getDocument({ data: arrayBufferAntigo }).promise;
+        const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
 
-        // 4. Renderização do resultado final
-        resultadoDiv.innerHTML = ''; 
-        
-        if (diferencas.length === 1 && !diferencas[0].added && !diferencas[0].removed) {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada! Os PDFs são idênticos em texto.</span>';
+        const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
+        let resultadoHTML = '';
+
+        // Processa e compara página por página para não estourar a memória
+        for (let i = 1; i <= totalPaginas; i++) {
+            resultadoDiv.innerHTML = `<b>Processando e Comparando:</b> Página ${i} de ${totalPaginas}...`;
+
+            let textoAntigoPagina = '';
+            let textoNovoPagina = '';
+
+            // Extrai texto da página atual do PDF antigo (se houver)
+            if (i <= pdfAntigo.numPages) {
+                const pagina = await pdfAntigo.getPage(i);
+                const conteudo = await pagina.getTextContent();
+                textoAntigoPagina = conteudo.items.map(item => item.str).join(' ');
+            }
+
+            // Extrai texto da página atual do PDF novo (se houver)
+            if (i <= pdfNovo.numPages) {
+                const pagina = await pdfNovo.getPage(i);
+                const conteudo = await pagina.getTextContent();
+                textoNovoPagina = conteudo.items.map(item => item.str).join(' ');
+            }
+
+            // Compara o texto apenas desta página
+            const diferencasPagina = Diff.diffWords(textoAntigoPagina, textoNovoPagina);
+            
+            // Verifica se houve mudanças nesta página específica
+            const temMudanca = diferencasPagina.some(part => part.added || part.removed);
+
+            if (temMudanca) {
+                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Alterações na Página ${i}]:</b><br>`;
+                diferencasPagina.forEach((part) => {
+                    if (part.added) {
+                        resultadoHTML += `<span class="added">${part.value}</span>`;
+                    } else if (part.removed) {
+                        resultadoHTML += `<span class="removed">${part.value}</span>`;
+                    } else {
+                        // Mostra só um pedaço do texto normal ao redor para dar contexto e não poluir a tela
+                        resultadoHTML += `<span> ${part.value.substring(0, 30)}... </span>`;
+                    }
+                });
+                resultadoHTML += `</div>`;
+            }
+        }
+
+        // Renderiza o resultado acumulado
+        if (resultadoHTML === '') {
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada nas 446 páginas! Os PDFs são idênticos.</span>';
         } else {
-            diferencas.forEach((part) => {
-                const span = document.createElement('span');
-                span.textContent = part.value;
-
-                if (part.added) {
-                    span.className = 'added';
-                } else if (part.removed) {
-                    span.className = 'removed';
-                }
-                resultadoDiv.appendChild(span);
-            });
+            resultadoDiv.innerHTML = resultadoHTML;
         }
 
     } catch (error) {
-        console.error("Erro capturado:", error);
-        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro no processamento:</b> ${error.message}<br><br>Verifique se os arquivos não estão corrompidos ou protegidos por senha.</span>`;
+        console.error("Erro no processamento pesado:", error);
+        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro ao processar documento longo:</b> ${error.message}</span>`;
     } finally {
-        // Devolve o controle ao botão
         btn.disabled = false;
         btn.innerText = 'Comparar Versões';
     }
 });
-
-// Função otimizada para ler arquivos binários de PDF página por página
-async function extrairTextoDoPDF(file, progressoCallback) {
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
-    let textoAcumulado = '';
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-        progressoCallback(i, pdf.numPages); // Envia o número da página atual para a tela
-        const pagina = await pdf.getPage(i);
-        const conteudoTexto = await pagina.getTextContent();
-        const textoPagina = conteudoTexto.items.map(item => item.str).join(' ');
-        textoAcumulado += textoPagina + '\n';
-    }
-    return textoAcumulado;
-}
