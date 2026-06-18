@@ -1,5 +1,6 @@
-// Worker atualizado e configurado corretamente
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+// Configuração do motor (worker) usando a mesma versão da biblioteca principal
+const pdfjsLib = window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
@@ -12,32 +13,32 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         return;
     }
 
-    // Desativa o botão para evitar cliques duplos
+    // Bloqueia botão e inicia processamento
     btn.disabled = true;
-    btn.innerText = 'Processando e Comparando...';
-    resultadoDiv.innerHTML = 'Lendo o primeiro PDF (Versão Antiga)...';
+    btn.innerText = 'Processando...';
+    resultadoDiv.innerHTML = 'Carregando arquivo base...';
 
     try {
-        // 1. Extrai o texto do primeiro PDF
-        const textoAntigo = await extrairTextoPDF(fileAntigo);
+        // 1. Extração do PDF antigo com feedback visual
+        const textoAntigo = await extrairTextoDoPDF(fileAntigo, (pAtual, pTotal) => {
+            resultadoDiv.innerHTML = `<b>Lendo PDF Antigo:</b> Página ${pAtual} de ${pTotal}...`;
+        });
         
-        // Atualiza o status
-        resultadoDiv.innerHTML = 'Primeiro PDF lido com sucesso! Lendo o segundo PDF (Versão Nova)...';
+        // 2. Extração do PDF novo com feedback visual
+        resultadoDiv.innerHTML = 'Carregando arquivo novo...';
+        const textoNovo = await extrairTextoDoPDF(fileNovo, (pAtual, pTotal) => {
+            resultadoDiv.innerHTML = `<b>Lendo PDF Novo (Atualizado):</b> Página ${pAtual} de ${pTotal}...`;
+        });
         
-        // 2. Extrai o texto do segundo PDF
-        const textoNovo = await extrairTextoPDF(fileNovo);
-        
-        // Atualiza o status
-        resultadoDiv.innerHTML = 'Comparando as diferenças nos textos...';
-
-        // 3. Faz a comparação palavra por palavra
+        // 3. Comparação de textos
+        resultadoDiv.innerHTML = 'Cruzando informações e gerando histórico...';
         const diferencas = Diff.diffWords(textoAntigo, textoNovo);
 
-        // 4. Renderiza o resultado
+        // 4. Renderização do resultado final
         resultadoDiv.innerHTML = ''; 
         
         if (diferencas.length === 1 && !diferencas[0].added && !diferencas[0].removed) {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração encontrada! Os textos são 100% idênticos.</span>';
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada! Os PDFs são idênticos em texto.</span>';
         } else {
             diferencas.forEach((part) => {
                 const span = document.createElement('span');
@@ -53,40 +54,28 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         }
 
     } catch (error) {
-        console.error("Erro detalhado:", error);
-        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif; font-weight: bold;">
-            Ih, travou! Erro ao processar: ${error.message}. <br><br>
-            Certifique-se de que o segundo PDF não é apenas uma imagem digitalizada ou está protegido por senha.
-        </span>`;
+        console.error("Erro capturado:", error);
+        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro no processamento:</b> ${error.message}<br><br>Verifique se os arquivos não estão corrompidos ou protegidos por senha.</span>`;
     } finally {
-        // Libera o botão novamente
+        // Devolve o controle ao botão
         btn.disabled = false;
         btn.innerText = 'Comparar Versões';
     }
 });
 
-// Função de extração otimizada com tratamento de erro por página
-async function extrairTextoPDF(file) {
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-        const pdf = await loadingTask.promise;
-        let textoCompleto = '';
+// Função otimizada para ler arquivos binários de PDF página por página
+async function extrairTextoDoPDF(file, progressoCallback) {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    let textoAcumulado = '';
 
-        for (let i = 1; i <= pdf.numPages; i++) {
-            try {
-                const pagina = await pdf.getPage(i);
-                const conteudoTexto = await pagina.getTextContent();
-                const textoPagina = conteudoTexto.items.map(item => item.str).join(' ');
-                textoCompleto += textoPagina + '\n';
-            } catch (pageError) {
-                console.warn(`Erro na página ${i}, pulando para a próxima...`, pageError);
-                // Se uma página falhar (por causa de um gráfico corrompido, ex), o sistema pula ela e não trava tudo
-                continue;
-            }
-        }
-        return textoCompleto;
-    } catch (err) {
-        throw new Error(`Falha ao abrir o arquivo "${file.name}" (${err.message})`);
+    for (let i = 1; i <= pdf.numPages; i++) {
+        progressoCallback(i, pdf.numPages); // Envia o número da página atual para a tela
+        const pagina = await pdf.getPage(i);
+        const conteudoTexto = await pagina.getTextContent();
+        const textoPagina = conteudoTexto.items.map(item => item.str).join(' ');
+        textoAcumulado += textoPagina + '\n';
     }
+    return textoAcumulado;
 }
