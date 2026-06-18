@@ -9,7 +9,7 @@ const firebaseConfig = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, where, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -21,6 +21,43 @@ let relatorioAtualTexto = "";
 let tagVersaoFinal = "1.0.0";
 
 window.addEventListener('DOMContentLoaded', carregarHistorico);
+
+// EVENTO ATUALIZADO: Quando escolhe o PDF Antigo, o sistema tenta rastrear a versão de origem no banco de dados
+document.getElementById('pdf-antigo').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const inputVersao = document.getElementById('versao-base');
+    const statusText = document.getElementById('status-version');
+    const statusLabel = document.getElementById('status-versao');
+
+    if (!file) return;
+
+    statusLabel.innerText = "Buscando histórico desta apostila no banco...";
+
+    try {
+        // Busca a última entrada no Firebase onde o arquivo com esse nome já foi processado
+        const q = query(
+            collection(db, "versoes"), 
+            where("nomeArquivoOriginal", "==", file.name),
+            orderBy("timestamp", "desc"),
+            limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+            const ultimaVersaoSalva = querySnapshot.docs[0].data().versaoSemver;
+            inputVersao.value = ultimaVersaoSalva;
+            statusLabel.innerHTML = `✓ Último registro encontrado no Firebase: <b style="color: #2b6cb0;">v${ultimaVersaoSalva}</b>. O sistema calculará a próxima a partir desta.`;
+        } else {
+            // Se nunca foi processado, assume que o arquivo base atual é o ponto inicial zero da linha do tempo
+            inputVersao.value = "1.0.0";
+            statusLabel.innerHTML = "ℹ Nenhuma versão anterior encontrada no Firebase. Definido como ponto de partida inicial: <b style="color: #27ae60;">1.0.0</b>";
+        }
+    } catch (err) {
+        console.error("Erro ao buscar histórico automático:", err);
+        statusLabel.innerText = "Não foi possível checar o histórico online. Mantendo padrão 1.0.0.";
+        inputVersao.value = "1.0.0";
+    }
+});
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
@@ -54,7 +91,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         
         let contemAdicao = false;
         let contemRemocao = false;
-
         let corpoDiferencasMarkdown = "";
 
         for (let i = 1; i <= totalPaginas; i++) {
@@ -107,10 +143,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         if (resultadoHTML === '') {
             resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração encontrada. Os arquivos são idênticos.</span>';
         } else {
-            // Calcula o SemVer automaticamente baseado no tipo de mudança
+            // Calcula o SemVer automaticamente baseado nas mudanças
             tagVersaoFinal = calcularNovaVersao(versaoBaseInput, contemAdicao, contemRemocao);
 
-            // Montagem do Relatório Final estruturado estilo GitHub Releases
             relatorioAtualTexto += `# 🚀 Release [v${tagVersaoFinal}]\n\n`;
             relatorioAtualTexto += `* **Data:** ${new Date().toLocaleString('pt-BR')}\n`;
             relatorioAtualTexto += `* **Versão Anterior:** \`${versaoBaseInput}\` ➔ **Nova Versão:** \`${tagVersaoFinal}\`\n`;
@@ -118,15 +153,16 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             relatorioAtualTexto += `## 🛠 Log de Alterações (Diff)\n\n`;
             relatorioAtualTexto += corpoDiferencasMarkdown;
 
-            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão sugerida: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">${tagVersaoFinal}</span></b></p>` + resultadoHTML;
+            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão calculada: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">${tagVersaoFinal}</span></b></p>` + resultadoHTML;
 
             btnDownload.style.display = 'inline-block';
 
-            // Salva no Firebase incluindo a tag da versão calculada
-            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Salvando dados no Firebase...</b></p>';
+            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando registro no Firebase...</b></p>';
             
+            // Salvando informações ricas no Firebase Firestore para a próxima automação funcionar
             await addDoc(collection(db, "versoes"), {
-                nomeArquivo: fileNovo.name,
+                nomeArquivo: fileNovo.name,             // Nome do arquivo novo que acabou de entrar
+                nomeArquivoOriginal: fileNovo.name,     // Salva como referência para futuras comparações
                 versaoSemver: tagVersaoFinal,
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date(),
@@ -146,21 +182,18 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Algoritmo de Versionamento Semântico Automatizado
 function calcularNovaVersao(versaoAtual, temAdicao, temRemocao) {
     let partes = versaoAtual.split('.');
-    if (partes.length !== 3) partes = [1, 0, 0]; // Fallback caso o input esteja errado
+    if (partes.length !== 3) partes = [1, 0, 0];
     
     let major = parseInt(partes[0]) || 1;
     let minor = parseInt(partes[1]) || 0;
     let patch = parseInt(partes[2]) || 0;
 
     if (temAdicao) {
-        // Conteúdo novo adicionado aumenta o Minor (ex: 1.0.0 -> 1.1.0)
         minor += 1;
         patch = 0;
     } else if (temRemocao) {
-        // Apenas correções ou exclusões aumentam o Patch (ex: 1.0.0 -> 1.0.1)
         patch += 1;
     }
     
