@@ -22,11 +22,10 @@ let tagVersaoFinal = "1.0.0";
 
 window.addEventListener('DOMContentLoaded', carregarHistorico);
 
-// EVENTO ATUALIZADO: Quando escolhe o PDF Antigo, o sistema tenta rastrear a versão de origem no banco de dados
+// CORREÇÃO: Busca ultra-compatível que não exige configuração de índices no Firebase
 document.getElementById('pdf-antigo').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     const inputVersao = document.getElementById('versao-base');
-    const statusText = document.getElementById('status-version');
     const statusLabel = document.getElementById('status-versao');
 
     if (!file) return;
@@ -34,26 +33,29 @@ document.getElementById('pdf-antigo').addEventListener('change', async (e) => {
     statusLabel.innerText = "Buscando histórico desta apostila no banco...";
 
     try {
-        // Busca a última entrada no Firebase onde o arquivo com esse nome já foi processado
-        const q = query(
-            collection(db, "versoes"), 
-            where("nomeArquivoOriginal", "==", file.name),
-            orderBy("timestamp", "desc"),
-            limit(1)
-        );
+        // Puxa os dados ordenados por tempo. O filtro de nome é feito via código para evitar erros de índice composto.
+        const q = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const querySnapshot = await getDocs(q);
+        
+        let versaoEncontrada = null;
 
-        if (!querySnapshot.empty) {
-            const ultimaVersaoSalva = querySnapshot.docs[0].data().versaoSemver;
-            inputVersao.value = ultimaVersaoSalva;
-            statusLabel.innerHTML = `✓ Último registro encontrado no Firebase: <b style="color: #2b6cb0;">v${ultimaVersaoSalva}</b>. O sistema calculará a próxima a partir desta.`;
+        // Varre os registros mais recentes procurando pelo arquivo correto
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            if (!versaoEncontrada && data.nomeArquivoOriginal === file.name) {
+                versaoEncontrada = data.versaoSemver;
+            }
+        });
+
+        if (versaoEncontrada) {
+            inputVersao.value = versaoEncontrada;
+            statusLabel.innerHTML = `✓ Último registro encontrado no Firebase: <b style="color: #2b6cb0;">v${versaoEncontrada}</b>. O sistema calculará a próxima a partir desta.`;
         } else {
-            // Se nunca foi processado, assume que o arquivo base atual é o ponto inicial zero da linha do tempo
             inputVersao.value = "1.0.0";
             statusLabel.innerHTML = "ℹ Nenhuma versão anterior encontrada no Firebase. Definido como ponto de partida inicial: <b style="color: #27ae60;">1.0.0</b>";
         }
     } catch (err) {
-        console.error("Erro ao buscar histórico automático:", err);
+        console.error("Erro ao rastrear versão base:", err);
         statusLabel.innerText = "Não foi possível checar o histórico online. Mantendo padrão 1.0.0.";
         inputVersao.value = "1.0.0";
     }
@@ -141,9 +143,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         }
 
         if (resultadoHTML === '') {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração encontrada. Os arquivos são idênticos.</span>';
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada nas páginas! Os arquivos são idênticos.</span>';
         } else {
-            // Calcula o SemVer automaticamente baseado nas mudanças
             tagVersaoFinal = calcularNovaVersao(versaoBaseInput, contemAdicao, contemRemocao);
 
             relatorioAtualTexto += `# 🚀 Release [v${tagVersaoFinal}]\n\n`;
@@ -159,10 +160,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
             resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando registro no Firebase...</b></p>';
             
-            // Salvando informações ricas no Firebase Firestore para a próxima automação funcionar
             await addDoc(collection(db, "versoes"), {
-                nomeArquivo: fileNovo.name,             // Nome do arquivo novo que acabou de entrar
-                nomeArquivoOriginal: fileNovo.name,     // Salva como referência para futuras comparações
+                nomeArquivo: fileNovo.name,             
+                nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date(),
