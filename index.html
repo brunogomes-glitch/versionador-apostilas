@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Versionador de Apostilas</title>
+    <title>Versionador de Apostilas (SemVer)</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>Versionador de Apostilas</h1>
-        <p class="subtitle">Faça o upload de duas versões do PDF para comparar, salvar e exportar o relatório.</p>
+        <p class="subtitle">Compare PDFs utilizando o padrão de versionamento semântico (Major.Minor.Patch).</p>
         
         <div class="upload-section">
             <div class="upload-box">
@@ -22,12 +22,17 @@
             </div>
         </div>
 
+        <div style="margin-bottom: 25px; background: #ebf8ff; padding: 15px; border-radius: 6px; border-left: 4px solid #3182ce;">
+            <label for="versao-base" style="font-weight: bold; color: #2b6cb0; display: block; margin-bottom: 5px;">Qual a versão atual do arquivo base? (Ex: 1.0.0)</label>
+            <input type="text" id="versao-base" value="1.0.0" style="width: 120px; padding: 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 16px; font-family: monospace; text-align: center;">
+        </div>
+
         <button id="btn-comparar">Comparar e Versionar</button>
 
         <div class="result-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h2>Relatório da Comparação Atual</h2>
-                <button id="btn-download-relatorio" style="display: none; width: auto; padding: 8px 15px; background-color: #27ae60; font-size: 14px;">Baixar Relatório (.txt)</button>
+                <button id="btn-download-relatorio" style="display: none; width: auto; padding: 8px 15px; background-color: #2c3e50; font-size: 14px;">Baixar Relatório Git (.md)</button>
             </div>
             <div id="resultado-diff" class="diff-box">
                 <span class="placeholder">Aguardando comparação...</span>
