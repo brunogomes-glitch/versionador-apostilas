@@ -9,7 +9,7 @@
 <body>
     <div class="container">
         <h1>Versionador de Apostilas</h1>
-        <p class="subtitle">Faça o upload de duas versões do PDF para comparar e salvar o histórico.</p>
+        <p class="subtitle">Faça o upload de duas versões do PDF para comparar, salvar e exportar o relatório.</p>
         
         <div class="upload-section">
             <div class="upload-box">
@@ -25,7 +25,10 @@
         <button id="btn-comparar">Comparar e Versionar</button>
 
         <div class="result-section">
-            <h2>Relatório da Comparação Atual</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2>Relatório da Comparação Atual</h2>
+                <button id="btn-download-relatorio" style="display: none; width: auto; padding: 8px 15px; background-color: #27ae60; font-size: 14px;">Baixar Relatório (.txt)</button>
+            </div>
             <div id="resultado-diff" class="diff-box">
                 <span class="placeholder">Aguardando comparação...</span>
             </div>
