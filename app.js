@@ -9,7 +9,7 @@ const firebaseConfig = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, where, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -20,46 +20,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 let relatorioAtualTexto = "";
 let tagVersaoFinal = "1.0.0";
 
+// Carrega o painel histórico ao abrir a página
 window.addEventListener('DOMContentLoaded', carregarHistorico);
-
-// CORREÇÃO: Busca ultra-compatível que não exige configuração de índices no Firebase
-document.getElementById('pdf-antigo').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
-    const inputVersao = document.getElementById('versao-base');
-    const statusLabel = document.getElementById('status-versao');
-
-    if (!file) return;
-
-    statusLabel.innerText = "Buscando histórico desta apostila no banco...";
-
-    try {
-        // Puxa os dados ordenados por tempo. O filtro de nome é feito via código para evitar erros de índice composto.
-        const q = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
-        const querySnapshot = await getDocs(q);
-        
-        let versaoEncontrada = null;
-
-        // Varre os registros mais recentes procurando pelo arquivo correto
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            if (!versaoEncontrada && data.nomeArquivoOriginal === file.name) {
-                versaoEncontrada = data.versaoSemver;
-            }
-        });
-
-        if (versaoEncontrada) {
-            inputVersao.value = versaoEncontrada;
-            statusLabel.innerHTML = `✓ Último registro encontrado no Firebase: <b style="color: #2b6cb0;">v${versaoEncontrada}</b>. O sistema calculará a próxima a partir desta.`;
-        } else {
-            inputVersao.value = "1.0.0";
-            statusLabel.innerHTML = "ℹ Nenhuma versão anterior encontrada no Firebase. Definido como ponto de partida inicial: <b style="color: #27ae60;">1.0.0</b>";
-        }
-    } catch (err) {
-        console.error("Erro ao rastrear versão base:", err);
-        statusLabel.innerText = "Não foi possível checar o histórico online. Mantendo padrão 1.0.0.";
-        inputVersao.value = "1.0.0";
-    }
-});
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
@@ -67,20 +29,35 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     const btn = document.getElementById('btn-comparar');
     const btnDownload = document.getElementById('btn-download-relatorio');
     const resultadoDiv = document.getElementById('resultado-diff');
-    const versaoBaseInput = document.getElementById('versao-base').value.trim();
 
     if (!fileAntigo || !fileNovo) {
         alert('Por favor, selecione os dois arquivos PDF para comparar.');
         return;
     }
 
+    // Inicia e isola o estado do botão
     btn.disabled = true;
     btn.innerText = 'Processando...';
     btnDownload.style.display = 'none'; 
-    resultadoDiv.innerHTML = 'Analisando arquivos...';
+    resultadoDiv.innerHTML = 'Consultando banco de dados do Firebase...';
     relatorioAtualTexto = ""; 
 
     try {
+        // ETAPA 1: Rastreia dinamicamente qual foi a última versão desta apostila salva no Firebase
+        const qHistorico = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
+        const snapshotHistorico = await getDocs(qHistorico);
+        let versaoBaseCalculada = "1.0.0"; 
+
+        snapshotHistorico.forEach((doc) => {
+            const registro = doc.data();
+            if (versaoBaseCalculada === "1.0.0" && registro.nomeArquivoOriginal === fileAntigo.name) {
+                versaoBaseCalculada = registro.versaoSemver;
+            }
+        });
+
+        resultadoDiv.innerHTML = `Versão base identificada: v${versaoBaseCalculada}. Abrindo arquivos PDF...`;
+
+        // ETAPA 2: Processamento dos PDFs em buffers isolados
         const arrayBufferAntigo = await fileAntigo.arrayBuffer();
         const arrayBufferNovo = await fileNovo.arrayBuffer();
         
@@ -95,6 +72,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemRemocao = false;
         let corpoDiferencasMarkdown = "";
 
+        // Varre e compara página por página (evita estouros de memória em PDFs de 400+ páginas)
         for (let i = 1; i <= totalPaginas; i++) {
             resultadoDiv.innerHTML = `<b>Processando e Comparando:</b> Página ${i} de ${totalPaginas}...`;
 
@@ -117,7 +95,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             const temMudanca = diferencasPagina.some(part => part.added || part.removed);
 
             if (temMudanca) {
-                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Página ${i}]:</b><br>`;
+                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Alterações na Página ${i}]:</b><br>`;
                 resumoAlteracoes += `[Página ${i}]: `;
                 corpoDiferencasMarkdown += `### 📄 Página ${i}\n\`\`\`diff\n`;
                 
@@ -133,7 +111,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                         corpoDiferencasMarkdown += `- ${part.value.trim()}\n`;
                         contemRemocao = true;
                     } else {
-                        resultadoHTML += `<span> ${part.value.substring(0, 20)}... </span>`;
+                        resultadoHTML += `<span> ${part.value.substring(0, 30)}... </span>`;
                     }
                 });
                 resultadoHTML += `</div>`;
@@ -142,23 +120,25 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
         }
 
+        // ETAPA 3: Geração de Relatórios e Gravação final na Nuvem
         if (resultadoHTML === '') {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada nas páginas! Os arquivos são idênticos.</span>';
+            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada! Os arquivos são idênticos em texto.</span>';
         } else {
-            tagVersaoFinal = calcularNovaVersao(versaoBaseInput, contemAdicao, contemRemocao);
+            // Calcula automaticamente a nova tag SemVer a partir do histórico online
+            tagVersaoFinal = calcularNovaVersao(versaoBaseCalculada, contemAdicao, contemRemocao);
 
             relatorioAtualTexto += `# 🚀 Release [v${tagVersaoFinal}]\n\n`;
-            relatorioAtualTexto += `* **Data:** ${new Date().toLocaleString('pt-BR')}\n`;
-            relatorioAtualTexto += `* **Versão Anterior:** \`${versaoBaseInput}\` ➔ **Nova Versão:** \`${tagVersaoFinal}\`\n`;
+            relatorioAtualTexto += `* **Data do Commit:** ${new Date().toLocaleString('pt-BR')}\n`;
+            relatorioAtualTexto += `* **Versão Anterior:** \`${versaoBaseCalculada}\` ➔ **Nova Versão:** \`${tagVersaoFinal}\`\n`;
             relatorioAtualTexto += `* **Arquivo Atualizado:** \`${fileNovo.name}\`\n\n`;
             relatorioAtualTexto += `## 🛠 Log de Alterações (Diff)\n\n`;
             relatorioAtualTexto += corpoDiferencasMarkdown;
 
-            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão calculada: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">${tagVersaoFinal}</span></b></p>` + resultadoHTML;
+            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão calculada de forma automatizada: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">v${tagVersaoFinal}</span></b></p>` + resultadoHTML;
 
             btnDownload.style.display = 'inline-block';
 
-            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando registro no Firebase...</b></p>';
+            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando nova versão estável no Firebase...</b></p>';
             
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
@@ -169,19 +149,20 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 mudancas: resumoAlteracoes
             });
 
-            resultadoDiv.innerHTML += '<p style="color: #27ae60;"><b>✓ Versão ' + tagVersaoFinal + ' gravada com sucesso!</b></p>';
+            resultadoDiv.innerHTML += `<p style="color: #27ae60;"><b>✓ Versão v${tagVersaoFinal} gravada com sucesso!</b></p>`;
             carregarHistorico();
         }
 
     } catch (error) {
-        console.error(error);
-        resultadoDiv.innerHTML = `Erro ao processar: ${error.message}`;
+        console.error("Erro interno lançado:", error);
+        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro no processamento:</b> ${error.message}</span>`;
     } finally {
         btn.disabled = false;
         btn.innerText = 'Comparar e Versionar';
     }
 });
 
+// Mecanismo Puro de Regras de Versionamento Semântico
 function calcularNovaVersao(versaoAtual, temAdicao, temRemocao) {
     let partes = versaoAtual.split('.');
     if (partes.length !== 3) partes = [1, 0, 0];
@@ -206,7 +187,8 @@ document.getElementById('btn-download-relatorio').addEventListener('click', () =
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `RELEASE_v${tagVersaoFinal}.md`;
+    const limpo = fileNovo.name ? fileNovo.name.replace(".pdf", "") : "changelog";
+    link.download = `RELEASE_v${tagVersaoFinal}_${limpo}.md`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
