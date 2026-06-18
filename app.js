@@ -19,6 +19,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let relatorioAtualTexto = "";
 let tagVersaoFinal = "1.0.0";
+let nomeDoArquivoParaDownload = "changelog";
 
 // Carrega o painel histórico ao abrir a página
 window.addEventListener('DOMContentLoaded', carregarHistorico);
@@ -34,6 +35,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         alert('Por favor, selecione os dois arquivos PDF para comparar.');
         return;
     }
+
+    // Guarda o nome do arquivo numa variável global para o botão de download usar com segurança
+    nomeDoArquivoParaDownload = fileNovo.name ? fileNovo.name.replace(".pdf", "") : "changelog";
 
     // Inicia e isola o estado do botão
     btn.disabled = true;
@@ -72,7 +76,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemRemocao = false;
         let corpoDiferencasMarkdown = "";
 
-        // Varre e compara página por página (evita estouros de memória em PDFs de 400+ páginas)
+        // Varre e compara página por página
         for (let i = 1; i <= totalPaginas; i++) {
             resultadoDiv.innerHTML = `<b>Processando e Comparando:</b> Página ${i} de ${totalPaginas}...`;
 
@@ -136,6 +140,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
             resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão calculada de forma automatizada: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">v${tagVersaoFinal}</span></b></p>` + resultadoHTML;
 
+            // Torna o botão visível após gerar o texto com sucesso
             btnDownload.style.display = 'inline-block';
 
             resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando nova versão estável no Firebase...</b></p>';
@@ -181,18 +186,22 @@ function calcularNovaVersao(versaoAtual, temAdicao, temRemocao) {
     return `${major}.${minor}.${patch}`;
 }
 
+// CORREÇÃO: Função isolada usando a variável segura nomeDoArquivoParaDownload
 document.getElementById('btn-download-relatorio').addEventListener('click', () => {
     if (!relatorioAtualTexto) return;
-    const blob = new Blob([relatorioAtualTexto], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    const limpo = fileNovo.name ? fileNovo.name.replace(".pdf", "") : "changelog";
-    link.download = `RELEASE_v${tagVersaoFinal}_${limpo}.md`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    try {
+        const blob = new Blob([relatorioAtualTexto], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `RELEASE_v${tagVersaoFinal}_${nomeDoArquivoParaDownload}.md`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        alert("Erro ao gerar o arquivo de download: " + err.message);
+    }
 });
 
 async function carregarHistorico() {
