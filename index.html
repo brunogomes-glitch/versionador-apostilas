@@ -7,36 +7,52 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Versionador de Apostilas</h1>
-        <p class="subtitle">Insira os PDFs para calcular e gravar a numeração de versão (Major.Minor.Patch).</p>
-        
-        <div class="upload-section">
-            <div class="upload-box">
-                <h3>1. Versão Anterior (Base)</h3>
-                <input type="file" id="pdf-antigo" accept=".pdf">
+    <div class="main-wrapper">
+        <div class="container">
+            <h1>Versionador de Apostilas</h1>
+            <p class="subtitle">Insira os PDFs para calcular e gravar a numeração de versão (Major.Minor.Patch).</p>
+            
+            <div class="upload-section">
+                <div class="upload-box">
+                    <h3>1. Versão Anterior (Base)</h3>
+                    <input type="file" id="pdf-antigo" accept=".pdf">
+                </div>
+                <div class="upload-box">
+                    <h3>2. Nova Versão (Atualizada)</h3>
+                    <input type="file" id="pdf-novo" accept=".pdf">
+                </div>
             </div>
-            <div class="upload-box">
-                <h3>2. Nova Versão (Atualizada)</h3>
-                <input type="file" id="pdf-novo" accept=".pdf">
+
+            <button id="btn-comparar">Versionar Documento</button>
+
+            <div class="result-section">
+                <h2>Resultado do Versionamento</h2>
+                <div id="resultado-diff" class="diff-box">
+                    <span class="placeholder">Aguardando arquivos para processamento...</span>
+                </div>
+            </div>
+
+            <hr style="margin: 40px 0; border: 0; border-top: 1px solid #e2e8f0;">
+
+            <div class="history-section">
+                <h2>Histórico de Versões Geradas</h2>
+                <div id="lista-historico">
+                    <p class="placeholder">Carregando histórico do banco de dados...</p>
+                </div>
             </div>
         </div>
 
-        <button id="btn-comparar">Versionar Documento</button>
-
-        <div class="result-section">
-            <h2>Resultado do Versionamento</h2>
-            <div id="resultado-diff" class="diff-box">
-                <span class="placeholder">Aguardando arquivos para processamento...</span>
-            </div>
-        </div>
-
-        <hr style="margin: 40px 0; border: 0; border-top: 1px solid #e2e8f0;">
-
-        <div class="history-section">
-            <h2>Histórico de Versões Geradas</h2>
-            <div id="lista-historico">
-                <p class="placeholder">Carregando histórico do banco de dados...</p>
+        <div class="sidebar-direito">
+            <h2>Certificações</h2>
+            <p class="sidebar-subtitle">Selecione a certificação correspondente:</p>
+            <div class="lista-certificacoes">
+                <button class="btn-certificacao active" data-cert="Geral">Todas as Certificações</button>
+                <button class="btn-certificacao" data-cert="CPA-10">CPA-10</button>
+                <button class="btn-certificacao" data-cert="CPA-20">CPA-20</button>
+                <button class="btn-certificacao" data-cert="CEA">CEA</button>
+                <button class="btn-certificacao" data-cert="CFP">CFP</button>
+                <button class="btn-certificacao" data-cert="CNPI">CNPI</button>
+                <button class="btn-certificacao" data-cert="Ancord">Ancord (AAI)</button>
             </div>
         </div>
     </div>
