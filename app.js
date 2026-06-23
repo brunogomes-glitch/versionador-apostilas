@@ -17,37 +17,25 @@ const db = getFirestore(app);
 const pdfjsLib = window['pdfjs-dist/build/pdf'];
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-let relatorioAtualTexto = "";
-let tagVersaoFinal = "1.0.0";
-let nomeDoArquivoParaDownload = "changelog";
-
-// Carrega o painel histórico ao abrir a página
 window.addEventListener('DOMContentLoaded', carregarHistorico);
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
     const fileNovo = document.getElementById('pdf-novo').files[0];
     const btn = document.getElementById('btn-comparar');
-    const btnDownload = document.getElementById('btn-download-relatorio');
     const resultadoDiv = document.getElementById('resultado-diff');
 
     if (!fileAntigo || !fileNovo) {
-        alert('Por favor, selecione os dois arquivos PDF para comparar.');
+        alert('Por favor, selecione os dois arquivos PDF para processar.');
         return;
     }
 
-    // Guarda o nome do arquivo numa variável global para o botão de download usar com segurança
-    nomeDoArquivoParaDownload = fileNovo.name ? fileNovo.name.replace(".pdf", "") : "changelog";
-
-    // Inicia e isola o estado do botão
     btn.disabled = true;
     btn.innerText = 'Processando...';
-    btnDownload.style.display = 'none'; 
     resultadoDiv.innerHTML = 'Consultando banco de dados do Firebase...';
-    relatorioAtualTexto = ""; 
 
     try {
-        // ETAPA 1: Rastreia dinamicamente qual foi a última versão desta apostila salva no Firebase
+        // 1. Busca a última versão existente para este arquivo no banco
         const qHistorico = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const snapshotHistorico = await getDocs(qHistorico);
         let versaoBaseCalculada = "1.0.0"; 
@@ -59,9 +47,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
         });
 
-        resultadoDiv.innerHTML = `Versão base identificada: v${versaoBaseCalculada}. Abrindo arquivos PDF...`;
+        resultadoDiv.innerHTML = `Lendo e comparando estruturas dos arquivos...`;
 
-        // ETAPA 2: Processamento dos PDFs em buffers isolados
+        // 2. Extração simplificada de texto apenas para ver o que mudou de tipo
         const arrayBufferAntigo = await fileAntigo.arrayBuffer();
         const arrayBufferNovo = await fileNovo.arrayBuffer();
         
@@ -69,17 +57,10 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
 
         const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
-        let resultadoHTML = '';
-        let resumoAlteracoes = ''; 
-        
         let contemAdicao = false;
         let contemRemocao = false;
-        let corpoDiferencasMarkdown = "";
 
-        // Varre e compara página por página
         for (let i = 1; i <= totalPaginas; i++) {
-            resultadoDiv.innerHTML = `<b>Processando e Comparando:</b> Página ${i} de ${totalPaginas}...`;
-
             let textoAntigoPagina = '';
             let textoNovoPagina = '';
 
@@ -96,114 +77,74 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
 
             const diferencasPagina = Diff.diffWords(textoAntigoPagina, textoNovoPagina);
-            const temMudanca = diferencasPagina.some(part => part.added || part.removed);
-
-            if (temMudanca) {
-                resultadoHTML += `<div style="margin-top: 15px; border-bottom: 1px dashed #ccc; padding-bottom: 10px;"><b>[Alterações na Página ${i}]:</b><br>`;
-                resumoAlteracoes += `[Página ${i}]: `;
-                corpoDiferencasMarkdown += `### 📄 Página ${i}\n\`\`\`diff\n`;
-                
-                diferencasPagina.forEach((part) => {
-                    if (part.added) {
-                        resultadoHTML += `<span class="added">${part.value}</span>`;
-                        resumoAlteracoes += `(+) ${part.value} `;
-                        corpoDiferencasMarkdown += `+ ${part.value.trim()}\n`;
-                        contemAdicao = true;
-                    } else if (part.removed) {
-                        resultadoHTML += `<span class="removed">${part.value}</span>`;
-                        resumoAlteracoes += `(-) ${part.value} `;
-                        corpoDiferencasMarkdown += `- ${part.value.trim()}\n`;
-                        contemRemocao = true;
-                    } else {
-                        resultadoHTML += `<span> ${part.value.substring(0, 30)}... </span>`;
-                    }
-                });
-                resultadoHTML += `</div>`;
-                resumoAlteracoes += '\n';
-                corpoDiferencasMarkdown += `\`\`\`\n\n`;
-            }
+            
+            diferencasPagina.forEach((part) => {
+                if (part.added) contemAdicao = true;
+                if (part.removed) contemRemocao = true;
+            });
         }
 
-        // ETAPA 3: Geração de Relatórios e Gravação final na Nuvem
-        if (resultadoHTML === '') {
-            resultadoDiv.innerHTML = '<span style="color: #27ae60; font-family: sans-serif; font-weight: bold;">Nenhuma alteração detectada! Os arquivos são idênticos em texto.</span>';
-        } else {
-            // Calcula automaticamente a nova tag SemVer a partir do histórico online
-            tagVersaoFinal = calcularNovaVersao(versaoBaseCalculada, contemAdicao, contemRemocao);
+        // 3. Regra de Negócio de incremento SemVer pura
+        let mudancaDetectada = "Nenhuma";
+        let tagVersaoFinal = versaoBaseCalculada;
 
-            relatorioAtualTexto += `# 🚀 Release [v${tagVersaoFinal}]\n\n`;
-            relatorioAtualTexto += `* **Data do Commit:** ${new Date().toLocaleString('pt-BR')}\n`;
-            relatorioAtualTexto += `* **Versão Anterior:** \`${versaoBaseCalculada}\` ➔ **Nova Versão:** \`${tagVersaoFinal}\`\n`;
-            relatorioAtualTexto += `* **Arquivo Atualizado:** \`${fileNovo.name}\`\n\n`;
-            relatorioAtualTexto += `## 🛠 Log de Alterações (Diff)\n\n`;
-            relatorioAtualTexto += corpoDiferencasMarkdown;
-
-            resultadoDiv.innerHTML = `<p style="font-size: 18px; color: #2c3e50;"><b>Nova versão calculada de forma automatizada: <span style="background:#2c3e50; color:#fff; padding: 2px 8px; border-radius:4px;">v${tagVersaoFinal}</span></b></p>` + resultadoHTML;
-
-            // Torna o botão visível após gerar o texto com sucesso
-            btnDownload.style.display = 'inline-block';
-
-            resultadoDiv.innerHTML += '<br><p style="color: #3498db;"><b>Gravando nova versão estável no Firebase...</b></p>';
+        if (contemAdicao) {
+            // Textos novos adicionados significam uma atualização MINOR (ex: 1.0.0 -> 1.1.0)
+            let partes = versaoBaseCalculada.split('.');
+            let major = parseInt(partes[0]) || 1;
+            let minor = parseInt(partes[1]) || 0;
             
+            minor += 1;
+            tagVersaoFinal = `${major}.${minor}.0`;
+            mudancaDetectada = "MINOR (Conteúdo Adicionado)";
+        } else if (contemRemocao) {
+            // Apenas exclusões ou correções geram um PATCH (ex: 1.0.0 -> 1.0.1)
+            let partes = versaoBaseCalculada.split('.');
+            let major = parseInt(partes[0]) || 1;
+            let minor = parseInt(partes[1]) || 0;
+            let patch = parseInt(partes[2]) || 0;
+            
+            patch += 1;
+            tagVersaoFinal = `${major}.${minor}.${patch}`;
+            mudancaDetectada = "PATCH (Pequenas Correções/Remoções)";
+        }
+
+        // 4. Renderiza na tela de forma limpa e objetiva
+        if (mudancaDetectada === "Nenhuma") {
+            resultadoDiv.innerHTML = `
+                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
+            `;
+        } else {
+            resultadoDiv.innerHTML = `
+                <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
+                <p style="margin:5px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
+                <p style="margin:5px 0 0 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
+            `;
+
+            // Grava os dados limpos no Firebase Firestore
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
+                tipoMudanca: mudancaDetectada,
                 data: new Date().toLocaleString('pt-BR'),
-                timestamp: new Date(),
-                mudancas: resumoAlteracoes
+                timestamp: new Date()
             });
 
-            resultadoDiv.innerHTML += `<p style="color: #27ae60;"><b>✓ Versão v${tagVersaoFinal} gravada com sucesso!</b></p>`;
             carregarHistorico();
         }
 
     } catch (error) {
-        console.error("Erro interno lançado:", error);
-        resultadoDiv.innerHTML = `<span style="color: #c0392b; font-family: sans-serif;"><b>Erro no processamento:</b> ${error.message}</span>`;
+        console.error(error);
+        resultadoDiv.innerHTML = `<span style="color:red;">Erro no processamento: ${error.message}</span>`;
     } finally {
         btn.disabled = false;
-        btn.innerText = 'Comparar e Versionar';
+        btn.innerText = 'Versionar Documento';
     }
 });
 
-// Mecanismo Puro de Regras de Versionamento Semântico
-function calcularNovaVersao(versaoAtual, temAdicao, temRemocao) {
-    let partes = versaoAtual.split('.');
-    if (partes.length !== 3) partes = [1, 0, 0];
-    
-    let major = parseInt(partes[0]) || 1;
-    let minor = parseInt(partes[1]) || 0;
-    let patch = parseInt(partes[2]) || 0;
-
-    if (temAdicao) {
-        minor += 1;
-        patch = 0;
-    } else if (temRemocao) {
-        patch += 1;
-    }
-    
-    return `${major}.${minor}.${patch}`;
-}
-
-// CORREÇÃO: Função isolada usando a variável segura nomeDoArquivoParaDownload
-document.getElementById('btn-download-relatorio').addEventListener('click', () => {
-    if (!relatorioAtualTexto) return;
-    try {
-        const blob = new Blob([relatorioAtualTexto], { type: 'text/markdown;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `RELEASE_v${tagVersaoFinal}_${nomeDoArquivoParaDownload}.md`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    } catch (err) {
-        alert("Erro ao gerar o arquivo de download: " + err.message);
-    }
-});
-
+// Carrega a lista limpa na parte inferior do painel
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
@@ -221,13 +162,10 @@ async function carregarHistorico() {
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             item.innerHTML = `
-                <span style="background: #2c3e50; color: #fff; padding: 2px 6px; font-size: 12px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver || '1.0.0'}</span>
-                <strong>Arquivo:</strong> ${versao.nomeArquivo} <br>
-                <strong>Modificado em:</strong> ${versao.data} <br>
-                <details style="margin-top: 8px;">
-                    <summary style="cursor:pointer; color: #2980b9; font-weight: 500;">Ver diff em texto da versão</summary>
-                    <pre style="background: #fff; padding: 10px; border: 1px solid #e2e8f0; margin-top: 5px; white-space: pre-wrap; font-family: monospace; font-size: 13px; color: #4a5568;">${versao.mudancas}</pre>
-                </details>
+                <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
+                <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
+                <strong>Tipo:</strong> ${versao.tipoMudanca} <br>
+                <small style="color:#7f8c8d;">Salvo em: ${versao.data}</small>
             `;
             listaDiv.appendChild(item);
         });
