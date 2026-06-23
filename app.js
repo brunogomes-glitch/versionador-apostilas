@@ -30,12 +30,9 @@ function configurarMenuLateral() {
     const botoes = document.querySelectorAll('.btn-certificacao');
     botoes.forEach(botao => {
         botao.addEventListener('click', () => {
-            // Remove a classe ativa de todos
             botoes.forEach(b => b.classList.remove('active'));
-            // Adiciona no botão clicado
             botao.classList.add('active');
             
-            // Atualiza a variável global e filtra a lista na hora
             certificacaoAtiva = botao.getAttribute('data-cert');
             carregarHistorico();
         });
@@ -139,7 +136,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
                 <p style="margin:5px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
                 <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
-                <p style="margin:5px 0 0 0; font-size: 13px; color:#4a5568;">Certificação Vinculada: <span class="placeholder" style="color:#2c3e50; font-weight:bold;">${certificacaoAtiva}</span></p>
+                <p style="margin:5px 0 0 0; font-size: 13px; color:#4a5568;">Curso Vinculado: <span style="color:#2c3e50; font-weight:bold;">${certificacaoAtiva}</span></p>
             `;
 
             // Grava os dados incluindo o campo 'certificacao'
@@ -148,7 +145,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
-                certificacao: certificacaoAtiva, // Vincula a certificação que estava ativa no menu lateral
+                certificacao: certificacaoAtiva, // Vincula o curso selecionado na barra lateral
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
@@ -165,7 +162,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Carrega o histórico filtrado pela certificação clicada
+// Carrega o histórico filtrado pelo curso clicado
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
@@ -183,16 +180,15 @@ async function carregarHistorico() {
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
             
-            // FILTRO INTELIGENTE VIA CÓDIGO (evita precisar criar novos índices compostos no Firebase)
+            // Filtro dinâmico via código
             if (certificacaoAtiva !== "Geral" && versao.certificacao !== certificacaoAtiva) {
-                return; // Pula este registro se não for da certificação selecionada
+                return; 
             }
 
             totalItensRenderizados++;
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             
-            // Badge da certificação
             const badgeCert = versao.certificacao ? `<span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao}</span>` : '';
 
             item.innerHTML = `
@@ -205,7 +201,7 @@ async function carregarHistorico() {
         });
 
         if (totalItensRenderizados === 0) {
-            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão para a certificação <b>${certificacaoAtiva}</b>.</p>`;
+            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>`;
         }
     } catch (e) {
         console.error(e);
