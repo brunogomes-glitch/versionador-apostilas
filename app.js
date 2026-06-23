@@ -17,7 +17,30 @@ const db = getFirestore(app);
 const pdfjsLib = window['pdfjs-dist/build/pdf'];
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-window.addEventListener('DOMContentLoaded', carregarHistorico);
+// Variável para guardar qual certificação está selecionada no menu lateral
+let certificacaoAtiva = "Geral";
+
+window.addEventListener('DOMContentLoaded', () => {
+    carregarHistorico();
+    configurarMenuLateral();
+});
+
+// Controla a troca de abas e filtros do menu lateral direito
+function configurarMenuLateral() {
+    const botoes = document.querySelectorAll('.btn-certificacao');
+    botoes.forEach(botao => {
+        botao.addEventListener('click', () => {
+            // Remove a classe ativa de todos
+            botoes.forEach(b => b.classList.remove('active'));
+            // Adiciona no botão clicado
+            botao.classList.add('active');
+            
+            // Atualiza a variável global e filtra a lista na hora
+            certificacaoAtiva = botao.getAttribute('data-cert');
+            carregarHistorico();
+        });
+    });
+}
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
@@ -84,32 +107,28 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             });
         }
 
-        // 3. Regra de Negócio de incremento SemVer pura
+        // 3. Regra de Versionamento Semântico
         let mudancaDetectada = "Nenhuma";
         let tagVersaoFinal = versaoBaseCalculada;
 
         if (contemAdicao) {
-            // Textos novos adicionados significam uma atualização MINOR (ex: 1.0.0 -> 1.1.0)
             let partes = versaoBaseCalculada.split('.');
             let major = parseInt(partes[0]) || 1;
             let minor = parseInt(partes[1]) || 0;
-            
             minor += 1;
             tagVersaoFinal = `${major}.${minor}.0`;
             mudancaDetectada = "MINOR (Conteúdo Adicionado)";
         } else if (contemRemocao) {
-            // Apenas exclusões ou correções geram um PATCH (ex: 1.0.0 -> 1.0.1)
             let partes = versaoBaseCalculada.split('.');
             let major = parseInt(partes[0]) || 1;
             let minor = parseInt(partes[1]) || 0;
             let patch = parseInt(partes[2]) || 0;
-            
             patch += 1;
             tagVersaoFinal = `${major}.${minor}.${patch}`;
             mudancaDetectada = "PATCH (Pequenas Correções/Remoções)";
         }
 
-        // 4. Renderiza na tela de forma limpa e objetiva
+        // 4. Renderiza na tela e grava salvando a certificação associada
         if (mudancaDetectada === "Nenhuma") {
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
@@ -119,15 +138,17 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
                 <p style="margin:5px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
-                <p style="margin:5px 0 0 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
+                <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
+                <p style="margin:5px 0 0 0; font-size: 13px; color:#4a5568;">Certificação Vinculada: <span class="placeholder" style="color:#2c3e50; font-weight:bold;">${certificacaoAtiva}</span></p>
             `;
 
-            // Grava os dados limpos no Firebase Firestore
+            // Grava os dados incluindo o campo 'certificacao'
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
+                certificacao: certificacaoAtiva, // Vincula a certificação que estava ativa no menu lateral
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
@@ -144,7 +165,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Carrega a lista limpa na parte inferior do painel
+// Carrega o histórico filtrado pela certificação clicada
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
@@ -156,20 +177,38 @@ async function carregarHistorico() {
             return;
         }
 
+        let totalItensRenderizados = 0;
         listaDiv.innerHTML = '';
+        
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
+            
+            // FILTRO INTELIGENTE VIA CÓDIGO (evita precisar criar novos índices compostos no Firebase)
+            if (certificacaoAtiva !== "Geral" && versao.certificacao !== certificacaoAtiva) {
+                return; // Pula este registro se não for da certificação selecionada
+            }
+
+            totalItensRenderizados++;
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
+            
+            // Badge da certificação
+            const badgeCert = versao.certificacao ? `<span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao}</span>` : '';
+
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
                 <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
-                <strong>Tipo:</strong> ${versao.tipoMudanca} <br>
+                <strong>Tipo:</strong> ${badgeCert} ${versao.tipoMudanca} <br>
                 <small style="color:#7f8c8d;">Salvo em: ${versao.data}</small>
             `;
             listaDiv.appendChild(item);
         });
+
+        if (totalItensRenderizados === 0) {
+            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão para a certificação <b>${certificacaoAtiva}</b>.</p>`;
+        }
     } catch (e) {
+        console.error(e);
         listaDiv.innerHTML = '<p style="color: red;">Erro ao carregar o histórico.</p>';
     }
 }
