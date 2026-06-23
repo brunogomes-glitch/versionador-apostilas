@@ -17,7 +17,6 @@ const db = getFirestore(app);
 const pdfjsLib = window['pdfjs-dist/build/pdf'];
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// Variável para guardar qual certificação está selecionada no menu lateral
 let certificacaoAtiva = "Geral";
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -47,6 +46,11 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
     if (!fileAntigo || !fileNovo) {
         alert('Por favor, selecione os dois arquivos PDF para processar.');
+        return;
+    }
+
+    if (certificacaoAtiva === "Geral") {
+        alert('Por favor, selecione o Curso correspondente no menu da direita antes de versionar!');
         return;
     }
 
@@ -139,13 +143,12 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 <p style="margin:5px 0 0 0; font-size: 13px; color:#4a5568;">Curso Vinculado: <span style="color:#2c3e50; font-weight:bold;">${certificacaoAtiva}</span></p>
             `;
 
-            // Grava os dados incluindo o campo 'certificacao'
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
-                certificacao: certificacaoAtiva, // Vincula o curso selecionado na barra lateral
+                certificacao: certificacaoAtiva, 
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
@@ -162,13 +165,20 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Carrega o histórico filtrado pelo curso clicado
+// Carrega o histórico filtrado e atualiza em tempo real os indicadores de versão do menu lateral
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
         const q = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const querySnapshot = await getDocs(q);
         
+        // Dicionário temporário para rastrear a última versão estável de cada curso
+        const ultimasVersoesMapeadas = {
+            "CPA": "1.0.0", "C-Pro R": "1.0.0", "C-Pro I": "1.0.0", "CFG": "1.0.0",
+            "CGA": "1.0.0", "CGE": "1.0.0", "CNPI Tec": "1.0.0", "CNPI Bra": "1.0.0",
+            "CNPI Gl": "1.0.0", "Ancord": "1.0.0"
+        };
+
         if (querySnapshot.empty) {
             listaDiv.innerHTML = '<p class="placeholder">Nenhuma versão salva no Firebase ainda.</p>';
             return;
@@ -180,7 +190,12 @@ async function carregarHistorico() {
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
             
-            // Filtro dinâmico via código
+            // 1. Mapeia de forma inteligente a versão mais recente encontrada no banco de dados para cada curso
+            if (versao.certificacao && ultimasVersoesMapeadas[versao.certificacao] === "1.0.0") {
+                ultimasVersoesMapeadas[versao.certificacao] = versao.versaoSemver;
+            }
+
+            // 2. Executa o filtro de exibição do histórico na tela
             if (certificacaoAtiva !== "Geral" && versao.certificacao !== certificacaoAtiva) {
                 return; 
             }
@@ -198,6 +213,16 @@ async function carregarHistorico() {
                 <small style="color:#7f8c8d;">Salvo em: ${versao.data}</small>
             `;
             listaDiv.appendChild(item);
+        });
+
+        // 3. ATUALIZA OS CAMPOS DE VERSÃO NA SIDEBAR AUTOMATICAMENTE
+        Object.keys(ultimasVersoesMapeadas).forEach(curso => {
+            // Converte os nomes com espaço ou caracteres especiais para bater com os IDs do HTML
+            const idFormatado = `tag-${curso.replace(/\s+/g, '-')}`;
+            const elementoTag = document.getElementById(idFormatado);
+            if (elementoTag) {
+                elementoTag.innerText = `v${ultimasVersoesMapeadas[curso]}`;
+            }
         });
 
         if (totalItensRenderizados === 0) {
