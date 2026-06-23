@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Versionador de Apostilas (SemVer Automático)</title>
+    <title>Versionador de Apostilas Básicas</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>Versionador de Apostilas</h1>
-        <p class="subtitle">Compare PDFs utilizando o padrão de versionamento semântico integrado ao Firebase.</p>
+        <p class="subtitle">Insira os PDFs para calcular e gravar a numeração de versão (Major.Minor.Patch).</p>
         
         <div class="upload-section">
             <div class="upload-box">
@@ -22,27 +22,19 @@
             </div>
         </div>
 
-        <div style="margin-bottom: 25px; background: #ebf8ff; padding: 15px; border-radius: 6px; border-left: 4px solid #3182ce;">
-            <p style="margin: 0; font-weight: bold; color: #2b6cb0;">ℹ️ Gerenciamento de Versão Automatizado</p>
-            <p style="margin: 5px 0 0 0; font-size: 14px; color: #4a5568;">O sistema buscará a última versão gravada no Firebase para esta apostila e calculará o próximo $Major.Minor.Patch$ automaticamente.</p>
-        </div>
-
-        <button id="btn-comparar">Comparar e Versionar</button>
+        <button id="btn-comparar">Versionar Documento</button>
 
         <div class="result-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h2>Relatório da Comparação Atual</h2>
-                <button id="btn-download-relatorio" style="display: none; width: auto; padding: 8px 15px; background-color: #2c3e50; font-size: 14px;">Baixar Relatório Git (.md)</button>
-            </div>
+            <h2>Resultado do Versionamento</h2>
             <div id="resultado-diff" class="diff-box">
-                <span class="placeholder">Aguardando comparação...</span>
+                <span class="placeholder">Aguardando arquivos para processamento...</span>
             </div>
         </div>
 
         <hr style="margin: 40px 0; border: 0; border-top: 1px solid #e2e8f0;">
 
         <div class="history-section">
-            <h2>Histórico de Versões Salvas (Firebase)</h2>
+            <h2>Histórico de Versões Geradas</h2>
             <div id="lista-historico">
                 <p class="placeholder">Carregando histórico do banco de dados...</p>
             </div>
