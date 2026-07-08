@@ -20,7 +20,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let certificacaoAtiva = "Geral";
 
-// Função utilitária para transformar o arquivo físico PDF em String (Base64) para salvar de graça
+// Transforma o PDF em Base64 para salvar direto no banco sem custos extras
 const converterParaBase64 = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -45,6 +45,19 @@ function configurarMenuLateral() {
     });
 }
 
+// Alimenta dinamicamente a barra de progresso em tela
+function atualizarBarraProgresso(texto, porcentagem) {
+    const container = document.getElementById('container-progresso');
+    const txtElement = document.getElementById('texto-progresso');
+    const pctElement = document.getElementById('porcentagem-progresso');
+    const fillElement = document.getElementById('progress-bar-fill');
+    
+    container.style.display = 'block';
+    txtElement.innerText = texto;
+    pctElement.innerText = `${porcentagem}%`;
+    fillElement.style.width = `${porcentagem}%`;
+}
+
 document.getElementById('btn-comparar').addEventListener('click', async () => {
     const fileAntigo = document.getElementById('pdf-antigo').files[0];
     const fileNovo = document.getElementById('pdf-novo').files[0];
@@ -63,6 +76,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
     btn.disabled = true;
     btn.innerText = 'Processando...';
+    
+    atualizarBarraProgresso('Consultando histórico anterior...', 10);
     resultadoDiv.innerHTML = 'Consultando histórico de versões anteriores...';
 
     try {
@@ -77,7 +92,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
         });
 
-        resultadoDiv.innerHTML = `Lendo e comparando conteúdo das páginas...`;
+        atualizarBarraProgresso('Carregando os arquivos PDF...', 20);
+        resultadoDiv.innerHTML = `Lendo arquivos...`;
 
         const arrayBufferAntigo = await fileAntigo.arrayBuffer();
         const arrayBufferNovo = await fileNovo.arrayBuffer();
@@ -91,7 +107,11 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemAdicao = false;
         let contemRemocao = false;
 
+        // Distribui o progresso das páginas dinamicamente entre 20% e 75%
         for (let i = 1; i <= totalPaginas; i++) {
+            const pctCalculado = Math.floor(20 + ((i / totalPaginas) * 55));
+            atualizarBarraProgresso(`Analisando: Página ${i} de ${totalPaginas}`, pctCalculado);
+
             let textoAntigoPagina = '';
             let textoNovoPagina = '';
 
@@ -151,44 +171,53 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         }
 
         if (mudancaDetectada === "Nenhuma") {
+            document.getElementById('container-progresso').style.display = 'none';
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão estável: <b>v${versaoBaseCalculada}</b></p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
-            resultadoDiv.innerHTML = `Processando e empacotando os PDFs para o banco de dados...`;
+            atualizarBarraProgresso('Empacotando e compactando arquivos físicos...', 85);
+            resultadoDiv.innerHTML = `Processando arquivos...`;
 
-            // Converte os arquivos para string Base64 de forma limpa
             const base64Antigo = await converterParaBase64(fileAntigo);
             const base64Novo = await converterParaBase64(fileNovo);
 
-            resultadoDiv.innerHTML = `
-                <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
-                <p style="margin:5px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
-                <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
-            `;
+            atualizarBarraProgresso('Salvando dados na nuvem do Firebase...', 95);
 
             if (listaTopicosMudancas.length === 0) listaTopicosMudancas.push("Ajustes gerais na apostila.");
 
-            // Grava tudo no Firestore (que é totalmente gratuito e não pede upgrade)
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
-                pdfAntigoBase64: base64Antigo, // Arquivo antigo em formato string
-                pdfNovoBase64: base64Novo,     // Arquivo novo em formato string
+                pdfAntigoBase64: base64Antigo, 
+                pdfNovoBase64: base64Novo,     
                 topicosMudancas: listaTopicosMudancas.slice(0, 5), 
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
 
+            atualizarBarraProgresso('Concluído!', 100);
+            
+            resultadoDiv.innerHTML = `
+                <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
+                <p style="margin:5px 0; font-size: 22px; color:#3498db;"><b>Nova Versão: <span style="color:#2c3e50;">v${tagVersaoFinal}</span></b></p>
+                <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
+            `;
+
             carregarHistorico();
+            
+            setTimeout(() => {
+                document.getElementById('container-progresso').style.display = 'none';
+            }, 2000);
         }
 
     } catch (error) {
         console.error(error);
+        document.getElementById('container-progresso').style.display = 'none';
         resultadoDiv.innerHTML = `<span style="color:red;">Erro no processamento: ${error.message}</span>`;
     } finally {
         btn.disabled = false;
@@ -196,7 +225,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Função para baixar o arquivo Base64 de volta para o computador como um PDF real
+// Executa a reconstrução e download do PDF armazenado a partir do texto Base64
 window.baixarPdfDesdeBase64 = function(base64Data, nomeArquivo) {
     const link = document.createElement('a');
     link.href = base64Data;
@@ -234,7 +263,6 @@ async function carregarHistorico() {
         
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
-            const idDoc = doc.id;
             
             if (versao.certificacao && ultimasVersoesMapeadas[versao.certificacao] === "1.0.0") {
                 ultimasVersoesMapeadas[versao.certificacao] = versao.versaoSemver;
@@ -260,9 +288,8 @@ async function carregarHistorico() {
             }
             topicosHTML += '</ul>';
 
-            // Criação de botões com funções JavaScript nativas para baixar o PDF remontado na hora
-            const botaoAntigoHTML = versao.pdfAntigoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfAntigoBase64}', 'antigo_${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#e74c3c; font-size:11px; margin-top:5px;">📥 Baixar Antigo</button>` : '<span style="color:#999;">Sem arquivo</span>';
-            const botaoNovoHTML = versao.pdfNovoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfNovoBase64}', '${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#2ecc71; font-size:11px; margin-top:5px; margin-left:10px;">📥 Baixar Novo</button>` : '<span style="color:#999; margin-left:10px;">Sem arquivo</span>';
+            const botaoAntigoHTML = versao.pdfAntigoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfAntigoBase64}', 'antigo_${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#e74c3c; font-size:11px; margin-top:5px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Antigo</button>` : '<span style="color:#999;">Sem arquivo</span>';
+            const botaoNovoHTML = versao.pdfNovoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfNovoBase64}', '${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#2ecc71; font-size:11px; margin-top:5px; margin-left:10px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Novo</button>` : '<span style="color:#999; margin-left:10px;">Sem arquivo</span>';
 
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
