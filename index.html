@@ -3,29 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Versionador de Apostilas Pro</title>
+    <title>Versionador de Apostilas Inteligente</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="main-wrapper">
         <div class="container">
             <h1>Versionador de Apostilas</h1>
-            <p class="subtitle">Insira os PDFs para calcular a versão, analisar as mudanças em tempo real e baixar o pacote estocado.</p>
+            <p class="subtitle">Insira a nova versão do PDF. O sistema buscará a versão anterior no Firebase automaticamente.</p>
             
             <div class="upload-section">
                 <div class="upload-box">
-                    <h3>1. Versão Anterior (Base)</h3>
-                    <input type="file" id="pdf-antigo" accept=".pdf">
-                </div>
-                <div class="upload-box">
-                    <h3>2. Nova Versão (Atualizada)</h3>
+                    <h3>Upload da Nova Apostila (Atualizada)</h3>
                     <input type="file" id="pdf-novo" accept=".pdf">
+                    <p style="font-size: 11px; color: #7f8c8d; margin-top: 8px;">Caso seja a primeira versão do curso, ela será definida como v1.0.0 automaticamente.</p>
                 </div>
             </div>
 
             <div id="container-progresso" style="display: none; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a5568; margin-bottom: 5px;">
-                    <span id="texto-progresso">Processando páginas...</span>
+                    <span id="texto-progresso">Analisando documento...</span>
                     <span id="porcentagem-progresso">0%</span>
                 </div>
                 <div class="progress-bar-bg">
@@ -33,12 +30,12 @@
                 </div>
             </div>
 
-            <button id="btn-comparar">Versionar e Estocar Documento</button>
+            <button id="btn-comparar">Comparar e Versionar com a Última Versão</button>
 
             <div class="result-section">
                 <h2>Resultado do Versionamento</h2>
                 <div id="resultado-diff" class="diff-box">
-                    <span class="placeholder">Aguardando arquivos para processamento...</span>
+                    <span class="placeholder">Aguardando novo arquivo para processamento...</span>
                 </div>
             </div>
 
