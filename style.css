@@ -70,6 +70,23 @@ h1 {
     cursor: not-allowed;
 }
 
+/* DESIGN DA BARRA DE PROGRESSO */
+.progress-bar-bg {
+    width: 100%;
+    background-color: #e2e8f0;
+    border-radius: 9999px;
+    height: 10px;
+    overflow: hidden;
+}
+
+#progress-bar-fill {
+    width: 0%;
+    height: 100%;
+    background-color: #3498db;
+    transition: width 0.1s ease;
+    border-radius: 9999px;
+}
+
 .result-section {
     margin-top: 30px;
 }
