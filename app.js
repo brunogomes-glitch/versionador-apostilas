@@ -10,7 +10,7 @@ const firebaseConfig = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -67,20 +67,14 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerText = 'Processando...';
     
-    // PASSO 1: Busca Inteligente da Versão Anterior no Firebase
     atualizarBarraProgresso('Buscando última versão no Firebase...', 15);
     resultadoDiv.innerHTML = 'Conectando ao histórico na nuvem...';
 
     try {
-        const qUltima = query(
-            collection(db, "versoes"), 
-            orderBy("timestamp", "desc")
-        );
+        const qUltima = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const snapshotHistorico = await getDocs(qUltima);
         
         let ultimaVersaoObjeto = null;
-        
-        // Acha o registro mais recente que pertence EXATAMENTE ao curso ativo
         snapshotHistorico.forEach((doc) => {
             const registro = doc.data();
             if (!ultimaVersaoObjeto && registro.certificacao === certificacaoAtiva) {
@@ -99,8 +93,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             resultadoDiv.innerHTML = `Nenhum histórico encontrado para o curso ${certificacaoAtiva}. Criando Versão Inicial...`;
         }
 
-        // PASSO 2: Extração de Texto do PDF Novo carregado pelo usuário
-        atualizarBarraProgresso('Lendo estrutura do novo PDF...', 35);
+        atualizarBarraProgresso('Lendo estrutura do novo PDF...', 30);
         const arrayBufferNovo = await fileNovo.arrayBuffer();
         const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
         const totalPaginasNovo = pdfNovo.numPages;
@@ -110,8 +103,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemAdicao = false;
         let contemRemocao = false;
 
+        // OTIMIZAÇÃO DE MEMÓRIA: Extrai o texto fatiado para não estourar o browser
         for (let i = 1; i <= totalPaginasNovo; i++) {
-            const pctCalculado = Math.floor(35 + ((i / totalPaginasNovo) * 45));
+            const pctCalculado = Math.floor(30 + ((i / totalPaginasNovo) * 45));
             atualizarBarraProgresso(`Processando e Extraindo: Página ${i} de ${totalPaginasNovo}`, pctCalculado);
 
             const pagina = await pdfNovo.getPage(i);
@@ -123,26 +117,36 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let tagVersaoFinal = "1.0.0";
         let mudancaDetectada = "Versão Inicial do Material";
 
-        // PASSO 3: Se já existia uma versão anterior, roda a inteligência do Diff de texto puro
         if (versaoBaseCalculada !== "0.0.0") {
-            atualizarBarraProgresso('Mapeando diferenças de conteúdo...', 85);
+            atualizarBarraProgresso('Mapeando diferenças de conteúdo de forma segura...', 80);
             
-            // O jsdiff compara as strings acumuladas (a salva do firebase vs a nova do PDF)
-            const diferencasTotais = Diff.diffWords(textoAntigoCompleto, textoNovoCompleto);
+            // CORREÇÃO CRUCIAL DO TRAVAMENTO NO 79%: Compara por blocos (linhas/frases) menores em vez de um textão bruto gigante
+            const arrayFrasesAntigas = textoAntigoCompleto.split(/[.!?]+/);
+            const arrayFrasesNovas = textoNovoCompleto.split(/[.!?]+/);
+
+            // Filtra e limpa espaços vazios
+            const antigasLimpas = arrayFrasesAntigas.map(f => f.trim()).filter(f => f.length > 5);
+            const novasLimpas = arrayFrasesNovas.map(f => f.trim()).filter(f => f.length > 5);
+
             let contadorMudancas = 0;
 
-            diferencasTotais.forEach((part) => {
-                if (part.added && part.value.trim().length > 4) {
+            // Mapeia novas inclusões procurando frases que não existiam no arquivo anterior
+            novasLimpas.forEach((frase) => {
+                if (!antigasLimpas.includes(frase)) {
                     contemAdicao = true;
                     if (contadorMudancas < 5) {
-                        listaTopicosMudancas.push(`Inclusão detectada: "${part.value.trim().substring(0, 55)}..."`);
+                        listaTopicosMudancas.push(`Inclusão detectada: "${frase.substring(0, 60)}..."`);
                         contadorMudancas++;
                     }
                 }
-                if (part.removed && part.value.trim().length > 4) {
+            });
+
+            // Mapeia remoções procurando o que sumiu do arquivo anterior
+            antigasLimpas.forEach((frase) => {
+                if (!novasLimpas.includes(frase)) {
                     contemRemocao = true;
                     if (contadorMudancas < 5) {
-                        listaTopicosMudancas.push(`Remoção detectada: "${part.value.trim().substring(0, 55)}..."`);
+                        listaTopicosMudancas.push(`Remoção/Alteração: "${frase.substring(0, 60)}..."`);
                         contadorMudancas++;
                     }
                 }
@@ -154,7 +158,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 let minor = parseInt(partes[1]) || 0;
                 minor += 1;
                 tagVersaoFinal = `${major}.${minor}.0`;
-                mudancaDetectada = "MINOR (Novos parágrafos aditados)";
+                mudancaDetectada = "MINOR (Novos conteúdos inclusos)";
             } else if (contemRemocao) {
                 let partes = versaoBaseCalculada.split('.');
                 let major = parseInt(partes[0]) || 1;
@@ -162,30 +166,28 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 let patch = parseInt(partes[2]) || 0;
                 patch += 1;
                 tagVersaoFinal = `${major}.${minor}.${patch}`;
-                mudancaDetectada = "PATCH (Revisão ou remoção de texto)";
+                mudancaDetectada = "PATCH (Revisão ou ajuste de texto)";
             } else {
                 mudancaDetectada = "Nenhuma";
                 tagVersaoFinal = versaoBaseCalculada;
             }
         }
 
-        // PASSO 4: Resultado na tela e gravação final otimizada
         if (mudancaDetectada === "Nenhuma") {
             document.getElementById('container-progresso').style.display = 'none';
             resultadoDiv.innerHTML = `
-                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ O arquivo é idêntico à versão salva anteriormente!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo estável em: <b>v${versaoBaseCalculada}</b></p>
+                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ O arquivo é idênticos à versão salva no banco!</p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão estável atual: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
             atualizarBarraProgresso('Registrando nova versão na nuvem...', 95);
 
             if (listaTopicosMudancas.length === 0 && tagVersaoFinal !== "1.0.0") {
-                listaTopicosMudancas.push("Ajustes pontuais de ortografia ou pontuação.");
+                listaTopicosMudancas.push("Pequenas correções ortográficas ou formatações detectadas.");
             } else if (tagVersaoFinal === "1.0.0") {
-                listaTopicosMudancas.push("Primeiro registro oficial estável desta apostila no sistema.");
+                listaTopicosMudancas.push("Primeiro registro estável desta apostila no sistema.");
             }
 
-            // Grava o histórico salvando o TEXTO PURO para a próxima comparação inteligente puxar sozinha
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
@@ -193,7 +195,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
                 topicosMudancas: listaTopicosMudancas, 
-                textoEstruturalPuro: textoNovoCompleto, // O segredo da automação está aqui!
+                textoEstruturalPuro: textoNovoCompleto, 
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
@@ -202,7 +204,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-size: 14px; color:#7f8c8d;">Curso: <b>${certificacaoAtiva}</b></p>
-                <p style="margin:3px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão Calculada: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
+                <p style="margin:3px 0; font-size: 22px; color:#3498db;"><b>Nova Versão Calculada: <span style="color:#2c3e50;">v${tagVersaoFinal}</span></b></p>
                 <p style="margin:3px 0 0 0; font-size: 14px; color:#e67e22;">Tipo de Ajuste: <b>${mudancaDetectada}</b></p>
             `;
 
