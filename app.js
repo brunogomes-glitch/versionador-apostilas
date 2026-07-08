@@ -91,7 +91,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
         });
 
-        // Puxa o mapa de assinaturas antigas (Lista de códigos leves)
         let mapaAssinaturasAntigas = [];
         let versaoBaseCalculada = "0.0.0";
 
@@ -113,7 +112,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemAdicao = false;
         let contemRemocao = false;
 
-        // Varre o PDF novo gerando os códigos de DNA de cada página
         for (let i = 1; i <= totalPaginasNovo; i++) {
             const pctCalculado = Math.floor(30 + ((i / totalPaginasNovo) * 55));
             atualizarBarraProgresso(`Processando DNA: Página ${i} de ${totalPaginasNovo}`, pctCalculado);
@@ -122,7 +120,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             const conteudo = await pagina.getTextContent();
             const textoPagina = conteudo.items.map(item => item.str).join(' ');
             
-            // Gera o código curto da página e guarda na lista leve
             const hashDaPagina = gerarAssinaturaTexto(textoPagina);
             mapaAssinaturasNovas.push(hashDaPagina);
         }
@@ -130,7 +127,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let tagVersaoFinal = "1.0.0";
         let mudancaDetectada = "Versão Inicial do Material";
 
-        // Se já existia uma versão, compara apenas os códigos de assinatura (Instantâneo e Leve!)
         if (versaoBaseCalculada !== "0.0.0") {
             atualizarBarraProgresso('Cruzando dados das assinaturas...', 90);
             
@@ -143,21 +139,20 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
                 if (!hashAntigo && hashNovo) {
                     contemAdicao = true;
-                    if (contadorMudancas < 5) {
-                        listaTopicosMudancas.push(`Estrutural: Nova Página adicionada ao final da apostila (Pág. ${i + 1})`);
+                    if (contadorMudancas < 8) {
+                        listaTopicosMudancas.push(`Página ${i + 1} adicionada ao final do documento.`);
                         contadorMudancas++;
                     }
                 } else if (hashAntigo && !hashNovo) {
                     contemRemocao = true;
-                    if (contadorMudancas < 5) {
-                        listaTopicosMudancas.push(`Estrutural: Página antiga foi removida do material (Pág. ${i + 1})`);
+                    if (contadorMudancas < 8) {
+                        listaTopicosMudancas.push(`Página ${i + 1} antiga foi excluída do material.`);
                         contadorMudancas++;
                     }
                 } else if (hashAntigo !== hashNovo) {
-                    // O texto da página mudou de alguma forma! Entra como PATCH
-                    contemRemocao = true; // Aciona o gatilho de revisão
-                    if (contadorMudancas < 5) {
-                        listaTopicosMudancas.push(`Modificação detectada no conteúdo impresso da Página ${i + 1}`);
+                    contemRemocao = true; 
+                    if (contadorMudancas < 8) {
+                        listaTopicosMudancas.push(`Conteúdo alterado/revisado na Página ${i + 1}.`);
                         contadorMudancas++;
                     }
                 }
@@ -169,7 +164,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 let minor = parseInt(partes[1]) || 0;
                 minor += 1;
                 tagVersaoFinal = `${major}.${minor}.0`;
-                mudancaDetectada = "MINOR (Novas páginas ou tópicos inclusos)";
+                mudancaDetectada = "MINOR (Inclusão de novos conteúdos)";
             } else if (contemRemocao) {
                 let partes = versaoBaseCalculada.split('.');
                 let major = parseInt(partes[0]) || 1;
@@ -177,7 +172,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 let patch = parseInt(partes[2]) || 0;
                 patch += 1;
                 tagVersaoFinal = `${major}.${minor}.${patch}`;
-                mudancaDetectada = "PATCH (Revisão ou ajuste interno de texto)";
+                mudancaDetectada = "PATCH (Ajustes e correções pontuais)";
             } else {
                 mudancaDetectada = "Nenhuma";
                 tagVersaoFinal = versaoBaseCalculada;
@@ -187,19 +182,21 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         if (mudancaDetectada === "Nenhuma") {
             document.getElementById('container-progresso').style.display = 'none';
             resultadoDiv.innerHTML = `
-                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ O arquivo atual é 100% idêntico à versão salva no banco de dados!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão estável atual: <b>v${versaoBaseCalculada}</b></p>
+                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ O arquivo atual é idêntico à versão salva anteriormente!</p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
-            atualizarBarraProgresso('Registrando nova assinatura digital...', 95);
+            atualizarBarraProgresso('Registrando nova assinatura...', 95);
 
             if (listaTopicosMudancas.length === 0 && tagVersaoFinal !== "1.0.0") {
-                listaTopicosMudancas.push("Ajustes gerais de diagramação ou formatação.");
+                listaTopicosMudancas.push("Modificações gerais de formatação.");
             } else if (tagVersaoFinal === "1.0.0") {
-                listaTopicosMudancas.push("Primeiro registro oficial estável desta apostila no sistema.");
+                listaTopicosMudancas.push("Primeiro registro estável desta apostila no sistema.");
             }
 
-            // SALVA APENAS OS MAPAS DE ASSINATURAS (Códigos super leves que nunca estouram o limite de 1MB!)
+            // Captura a data e hora atualizada no formato do Brasil
+            const dataHoraAtual = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
@@ -207,8 +204,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
                 topicosMudancas: listaTopicosMudancas, 
-                mapaAssinaturas: mapaAssinaturasNovas, // Substituiu o texto bruto. Ocupa quase zero de espaço!
-                data: new Date().toLocaleString('pt-BR'),
+                mapaAssinaturas: mapaAssinaturasNovas, 
+                data: dataHoraAtual, // Garante que a data está salva como string legível
                 timestamp: new Date()
             });
 
@@ -278,23 +275,25 @@ async function carregarHistorico() {
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             
-            let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568;">';
+            // Renderiza de forma rica os tópicos de alterações salvos
+            let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568; line-height: 1.5;">';
             if (versao.topicosMudancas && Array.isArray(versao.topicosMudancas)) {
                 versao.topicosMudancas.forEach(t => {
-                    topicosHTML += `<li style="margin-bottom:2px;">${t}</li>`;
+                    topicosHTML += `<li style="margin-bottom:3px;">${t}</li>`;
                 });
             } else {
                 topicosHTML += `<li>Ajustes gerais na apostila.</li>`;
             }
             topicosHTML += '</ul>';
 
+            // Exibe explicitamente o arquivo, a data salva e os tópicos mapeados
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
                 <span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao || 'Geral'}</span>
                 <strong>Arquivo:</strong> ${versao.nomeArquivo} <br>
-                <small style="color:#7f8c8d; font-weight: bold;">📅 Processado em: ${versao.data}</small>
+                <small style="color:#e67e22; font-weight: bold; display: block; margin-top: 4px;">📅 Processado em: ${versao.data || new Date(versao.timestamp?.seconds * 1000).toLocaleString('pt-BR')}</small>
                 
-                <div style="margin: 10px 0; padding: 8px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
+                <div style="margin-top: 10px; padding: 10px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
                     <strong style="font-size: 13px; color:#2d3748;">📋 Mudanças mapeadas em relação à versão anterior:</strong>
                     ${topicosHTML}
                 </div>
@@ -311,7 +310,7 @@ async function carregarHistorico() {
         });
 
         if (totalItensRenderizados === 0) {
-            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>`;
+            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>';
         }
     } catch (e) {
         console.error(e);
