@@ -10,7 +10,7 @@ const firebaseConfig = {
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -50,13 +50,12 @@ function atualizarBarraProgresso(texto, porcentagem) {
 }
 
 document.getElementById('btn-comparar').addEventListener('click', async () => {
-    const fileAntigo = document.getElementById('pdf-antigo').files[0];
     const fileNovo = document.getElementById('pdf-novo').files[0];
     const btn = document.getElementById('btn-comparar');
     const resultadoDiv = document.getElementById('resultado-diff');
 
-    if (!fileAntigo || !fileNovo) {
-        alert('Por favor, selecione os dois arquivos PDF para processar.');
+    if (!fileNovo) {
+        alert('Por favor, selecione o arquivo PDF atualizado para processar.');
         return;
     }
 
@@ -68,157 +67,143 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     btn.disabled = true;
     btn.innerText = 'Processando...';
     
-    atualizarBarraProgresso('Consultando histórico anterior...', 10);
-    resultadoDiv.innerHTML = 'Consultando histórico de versões anteriores...';
+    // PASSO 1: Busca Inteligente da Versão Anterior no Firebase
+    atualizarBarraProgresso('Buscando última versão no Firebase...', 15);
+    resultadoDiv.innerHTML = 'Conectando ao histórico na nuvem...';
 
     try {
-        const qHistorico = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
-        const snapshotHistorico = await getDocs(qHistorico);
-        let versaoBaseCalculada = "1.0.0"; 
-
+        const qUltima = query(
+            collection(db, "versoes"), 
+            orderBy("timestamp", "desc")
+        );
+        const snapshotHistorico = await getDocs(qUltima);
+        
+        let ultimaVersaoObjeto = null;
+        
+        // Acha o registro mais recente que pertence EXATAMENTE ao curso ativo
         snapshotHistorico.forEach((doc) => {
             const registro = doc.data();
-            if (versaoBaseCalculada === "1.0.0" && registro.nomeArquivoOriginal === fileAntigo.name) {
-                versaoBaseCalculada = registro.versaoSemver;
+            if (!ultimaVersaoObjeto && registro.certificacao === certificacaoAtiva) {
+                ultimaVersaoObjeto = registro;
             }
         });
 
-        atualizarBarraProgresso('Carregando os arquivos PDF...', 20);
-        resultadoDiv.innerHTML = `Lendo arquivos...`;
+        let textoAntigoCompleto = "";
+        let versaoBaseCalculada = "0.0.0";
 
-        const arrayBufferAntigo = await fileAntigo.arrayBuffer();
+        if (ultimaVersaoObjeto) {
+            versaoBaseCalculada = ultimaVersaoObjeto.versaoSemver;
+            textoAntigoCompleto = ultimaVersaoObjeto.textoEstruturalPuro || "";
+            resultadoDiv.innerHTML = `Última versão encontrada: v${versaoBaseCalculada}. Lendo novo PDF...`;
+        } else {
+            resultadoDiv.innerHTML = `Nenhum histórico encontrado para o curso ${certificacaoAtiva}. Criando Versão Inicial...`;
+        }
+
+        // PASSO 2: Extração de Texto do PDF Novo carregado pelo usuário
+        atualizarBarraProgresso('Lendo estrutura do novo PDF...', 35);
         const arrayBufferNovo = await fileNovo.arrayBuffer();
-        
-        const pdfAntigo = await pdfjsLib.getDocument({ data: arrayBufferAntigo }).promise;
         const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
-
-        const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
+        const totalPaginasNovo = pdfNovo.numPages;
         
+        let textoNovoCompleto = "";
         let listaTopicosMudancas = [];
         let contemAdicao = false;
         let contemRemocao = false;
 
-        for (let i = 1; i <= totalPaginas; i++) {
-            const pctCalculado = Math.floor(20 + ((i / totalPaginas) * 55));
-            atualizarBarraProgresso(`Analisando: Página ${i} de ${totalPaginas}`, pctCalculado);
+        for (let i = 1; i <= totalPaginasNovo; i++) {
+            const pctCalculado = Math.floor(35 + ((i / totalPaginasNovo) * 45));
+            atualizarBarraProgresso(`Processando e Extraindo: Página ${i} de ${totalPaginasNovo}`, pctCalculado);
 
-            let textoAntigoPagina = '';
-            let textoNovoPagina = '';
+            const pagina = await pdfNovo.getPage(i);
+            const conteudo = await pagina.getTextContent();
+            const textoPagina = conteudo.items.map(item => item.str).join(' ');
+            textoNovoCompleto += textoPagina + " ";
+        }
 
-            if (i <= pdfAntigo.numPages) {
-                const pagina = await pdfAntigo.getPage(i);
-                const conteudo = await pagina.getTextContent();
-                textoAntigoPagina = conteudo.items.map(item => item.str).join(' ');
-            }
+        let tagVersaoFinal = "1.0.0";
+        let mudancaDetectada = "Versão Inicial do Material";
 
-            if (i <= pdfNovo.numPages) {
-                const pagina = await pdfNovo.getPage(i);
-                const conteudo = await pagina.getTextContent();
-                textoNovoPagina = conteudo.items.map(item => item.str).join(' ');
-            }
+        // PASSO 3: Se já existia uma versão anterior, roda a inteligência do Diff de texto puro
+        if (versaoBaseCalculada !== "0.0.0") {
+            atualizarBarraProgresso('Mapeando diferenças de conteúdo...', 85);
+            
+            // O jsdiff compara as strings acumuladas (a salva do firebase vs a nova do PDF)
+            const diferencasTotais = Diff.diffWords(textoAntigoCompleto, textoNovoCompleto);
+            let contadorMudancas = 0;
 
-            const diferencasPagina = Diff.diffWords(textoAntigoPagina, textoNovoPagina);
-            let trechosAdicionados = [];
-            let trechosRemovidos = [];
-
-            diferencasPagina.forEach((part) => {
-                if (part.added) {
+            diferencasTotais.forEach((part) => {
+                if (part.added && part.value.trim().length > 4) {
                     contemAdicao = true;
-                    if (part.value.trim().length > 3) trechosAdicionados.push(part.value.trim());
+                    if (contadorMudancas < 5) {
+                        listaTopicosMudancas.push(`Inclusão detectada: "${part.value.trim().substring(0, 55)}..."`);
+                        contadorMudancas++;
+                    }
                 }
-                if (part.removed) {
+                if (part.removed && part.value.trim().length > 4) {
                     contemRemocao = true;
-                    if (part.value.trim().length > 3) trechosRemovidos.push(part.value.trim());
+                    if (contadorMudancas < 5) {
+                        listaTopicosMudancas.push(`Remoção detectada: "${part.value.trim().substring(0, 55)}..."`);
+                        contadorMudancas++;
+                    }
                 }
             });
 
-            if (trechosRemovidos.length > 0) {
-                listaTopicosMudancas.push(`Pág. ${i}: Remoção de "${trechosRemovidos.join(' | ').substring(0, 50)}..."`);
-            }
-            if (trechosAdicionados.length > 0) {
-                listaTopicosMudancas.push(`Pág. ${i}: Inclusão de "${trechosAdicionados.join(' | ').substring(0, 50)}..."`);
+            if (contemAdicao) {
+                let partes = versaoBaseCalculada.split('.');
+                let major = parseInt(partes[0]) || 1;
+                let minor = parseInt(partes[1]) || 0;
+                minor += 1;
+                tagVersaoFinal = `${major}.${minor}.0`;
+                mudancaDetectada = "MINOR (Novos parágrafos aditados)";
+            } else if (contemRemocao) {
+                let partes = versaoBaseCalculada.split('.');
+                let major = parseInt(partes[0]) || 1;
+                let minor = parseInt(partes[1]) || 0;
+                let patch = parseInt(partes[2]) || 0;
+                patch += 1;
+                tagVersaoFinal = `${major}.${minor}.${patch}`;
+                mudancaDetectada = "PATCH (Revisão ou remoção de texto)";
+            } else {
+                mudancaDetectada = "Nenhuma";
+                tagVersaoFinal = versaoBaseCalculada;
             }
         }
 
-        let mudancaDetectada = "Nenhuma";
-        let tagVersaoFinal = versaoBaseCalculada;
-
-        if (contemAdicao) {
-            let partes = versaoBaseCalculada.split('.');
-            let major = parseInt(partes[0]) || 1;
-            let minor = parseInt(partes[1]) || 0;
-            minor += 1;
-            tagVersaoFinal = `${major}.${minor}.0`;
-            mudancaDetectada = "MINOR (Conteúdo Adicionado)";
-        } else if (contemRemocao) {
-            let partes = versaoBaseCalculada.split('.');
-            let major = parseInt(partes[0]) || 1;
-            let minor = parseInt(partes[1]) || 0;
-            let patch = parseInt(partes[2]) || 0;
-            patch += 1;
-            tagVersaoFinal = `${major}.${minor}.${patch}`;
-            mudancaDetectada = "PATCH (Pequenas Correções/Remoções)";
-        }
-
+        // PASSO 4: Resultado na tela e gravação final otimizada
         if (mudancaDetectada === "Nenhuma") {
             document.getElementById('container-progresso').style.display = 'none';
             resultadoDiv.innerHTML = `
-                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
+                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ O arquivo é idêntico à versão salva anteriormente!</p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo estável em: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
-            // NOVA ETAPA: Montando estoque ZIP físico para baixar localmente
-            atualizarBarraProgresso('Estocando PDFs em pacote comprimido (ZIP)...', 80);
+            atualizarBarraProgresso('Registrando nova versão na nuvem...', 95);
 
-            if (listaTopicosMudancas.length === 0) listaTopicosMudancas.push("Ajustes gerais na apostila.");
+            if (listaTopicosMudancas.length === 0 && tagVersaoFinal !== "1.0.0") {
+                listaTopicosMudancas.push("Ajustes pontuais de ortografia ou pontuação.");
+            } else if (tagVersaoFinal === "1.0.0") {
+                listaTopicosMudancas.push("Primeiro registro oficial estável desta apostila no sistema.");
+            }
 
-            const zip = new JSZip();
-            const pastaCurso = zip.folder(`${certificacaoAtiva}_v${tagVersaoFinal}`);
-            
-            // Adiciona os arquivos brutos para estocagem
-            pastaCurso.file(`1_VERSAO_ANTERIOR_v${versaoBaseCalculada}.pdf`, fileAntigo);
-            pastaCurso.file(`2_NOVA_VERSAO_v${tagVersaoFinal}.pdf`, fileNovo);
-            
-            // Adiciona o relatório em texto descritivo
-            let relatorioTexto = `RELATÓRIO DE VERSIONAMENTO - ${certificacaoAtiva}\n`;
-            relatorioTexto += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
-            relatorioTexto += `Versão Base: v${versaoBaseCalculada} -> Nova Versão: v${tagVersaoFinal}\n`;
-            relatorioTexto += `Tipo de Alteração: ${mudancaDetectada}\n\n`;
-            relatorioTexto += `TÓPICOS DETECTADOS:\n`;
-            listaTopicosMudancas.forEach(t => relatorioTexto += `- ${t}\n`);
-            
-            pastaCurso.file("resumo_alteracoes.txt", relatorioTexto);
-
-            // Dispara download do ZIP estocado no navegador
-            const conteudoZip = await zip.generateAsync({ type: "blob" });
-            const linkDownload = document.createElement('a');
-            linkDownload.href = URL.createObjectURL(conteudoZip);
-            linkDownload.download = `Estoque_${certificacaoAtiva}_v${tagVersaoFinal}.zip`;
-            document.body.appendChild(linkDownload);
-            linkDownload.click();
-            document.body.removeChild(linkDownload);
-
-            // Gravando dados leves na nuvem (Histórico do site)
-            atualizarBarraProgresso('Salvando dados históricos na nuvem...', 95);
-
+            // Grava o histórico salvando o TEXTO PURO para a próxima comparação inteligente puxar sozinha
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
-                topicosMudancas: listaTopicosMudancas.slice(0, 5), 
+                topicosMudancas: listaTopicosMudancas, 
+                textoEstruturalPuro: textoNovoCompleto, // O segredo da automação está aqui!
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
 
-            atualizarBarraProgresso('Concluído e Estocado!', 100);
+            atualizarBarraProgresso('Concluído!', 100);
             
             resultadoDiv.innerHTML = `
-                <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
-                <p style="margin:5px 0; font-size: 22px; color:#3498db;"><b>Nova Versão: <span style="color:#2c3e50;">v${tagVersaoFinal}</span></b></p>
-                <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
-                <p style="margin:10px 0 0 0; font-size: 13px; color:#27ae60; font-weight:bold;">✓ Pacote ZIP de estocagem baixado automaticamente!</p>
+                <p style="margin:0; font-size: 14px; color:#7f8c8d;">Curso: <b>${certificacaoAtiva}</b></p>
+                <p style="margin:3px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão Calculada: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
+                <p style="margin:3px 0 0 0; font-size: 14px; color:#e67e22;">Tipo de Ajuste: <b>${mudancaDetectada}</b></p>
             `;
 
             carregarHistorico();
@@ -234,7 +219,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         resultadoDiv.innerHTML = `<span style="color:red;">Erro no processamento: ${error.message}</span>`;
     } finally {
         btn.disabled = false;
-        btn.innerText = 'Versionar e Estocar Documento';
+        btn.innerText = 'Comparar e Versionar com a Última Versão';
     }
 });
 
@@ -292,11 +277,11 @@ async function carregarHistorico() {
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
                 <span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao || 'Geral'}</span>
-                <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
-                <small style="color:#7f8c8d; font-weight: bold;">📅 Modificado em: ${versao.data}</small>
+                <strong>Arquivo:</strong> ${versao.nomeArquivo} <br>
+                <small style="color:#7f8c8d; font-weight: bold;">📅 Processado em: ${versao.data}</small>
                 
                 <div style="margin: 10px 0; padding: 8px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
-                    <strong style="font-size: 13px; color:#2d3748;">📋 Resumo das Alterações calculadas:</strong>
+                    <strong style="font-size: 13px; color:#2d3748;">📋 Mudanças em relação à versão anterior:</strong>
                     ${topicosHTML}
                 </div>
             `;
