@@ -5,7 +5,8 @@ const firebaseConfig = {
     projectId: "versionador-apostilas",
     storageBucket: "versionador-apostilas.firebasestorage.app",
     messagingSenderId: "14543972647",
-    appId: "1:14543972647:web:1aadf3f86bbcdd1d2833b2"
+    appId: "1:14543972647:web:1aadf3f86bbcdd1d2833b2",
+    measurementId: "G-2LDVJ25K10"
 };
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
@@ -19,19 +20,25 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let certificacaoAtiva = "Geral";
 
+// Função utilitária para transformar o arquivo físico PDF em String (Base64) para salvar de graça
+const converterParaBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+});
+
 window.addEventListener('DOMContentLoaded', () => {
     carregarHistorico();
     configurarMenuLateral();
 });
 
-// Controla a troca de abas e filtros do menu lateral direito
 function configurarMenuLateral() {
     const botoes = document.querySelectorAll('.btn-certificacao');
     botoes.forEach(botao => {
         botao.addEventListener('click', () => {
             botoes.forEach(b => b.classList.remove('active'));
             botao.classList.add('active');
-            
             certificacaoAtiva = botao.getAttribute('data-cert');
             carregarHistorico();
         });
@@ -56,10 +63,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
 
     btn.disabled = true;
     btn.innerText = 'Processando...';
-    resultadoDiv.innerHTML = 'Consultando banco de dados do Firebase...';
+    resultadoDiv.innerHTML = 'Consultando histórico de versões anteriores...';
 
     try {
-        // 1. Busca a última versão existente para este arquivo no banco
         const qHistorico = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const snapshotHistorico = await getDocs(qHistorico);
         let versaoBaseCalculada = "1.0.0"; 
@@ -71,9 +77,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
         });
 
-        resultadoDiv.innerHTML = `Lendo e comparando estruturas dos arquivos...`;
+        resultadoDiv.innerHTML = `Lendo e comparando conteúdo das páginas...`;
 
-        // 2. Extração simplificada de texto apenas para ver o que mudou de tipo
         const arrayBufferAntigo = await fileAntigo.arrayBuffer();
         const arrayBufferNovo = await fileNovo.arrayBuffer();
         
@@ -81,6 +86,8 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
 
         const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
+        
+        let listaTopicosMudancas = [];
         let contemAdicao = false;
         let contemRemocao = false;
 
@@ -101,14 +108,28 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             }
 
             const diferencasPagina = Diff.diffWords(textoAntigoPagina, textoNovoPagina);
-            
+            let trechosAdicionados = [];
+            let trechosRemovidos = [];
+
             diferencasPagina.forEach((part) => {
-                if (part.added) contemAdicao = true;
-                if (part.removed) contemRemocao = true;
+                if (part.added) {
+                    contemAdicao = true;
+                    if (part.value.trim().length > 3) trechosAdicionados.push(part.value.trim());
+                }
+                if (part.removed) {
+                    contemRemocao = true;
+                    if (part.value.trim().length > 3) trechosRemovidos.push(part.value.trim());
+                }
             });
+
+            if (trechosRemovidos.length > 0) {
+                listaTopicosMudancas.push(`Pág. ${i}: Remoção de "${trechosRemovidos.join(' | ').substring(0, 50)}..."`);
+            }
+            if (trechosAdicionados.length > 0) {
+                listaTopicosMudancas.push(`Pág. ${i}: Inclusão de "${trechosAdicionados.join(' | ').substring(0, 50)}..."`);
+            }
         }
 
-        // 3. Regra de Versionamento Semântico
         let mudancaDetectada = "Nenhuma";
         let tagVersaoFinal = versaoBaseCalculada;
 
@@ -129,26 +150,36 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             mudancaDetectada = "PATCH (Pequenas Correções/Remoções)";
         }
 
-        // 4. Renderiza na tela e grava salvando a certificação associada
         if (mudancaDetectada === "Nenhuma") {
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
+                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão estável: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
+            resultadoDiv.innerHTML = `Processando e empacotando os PDFs para o banco de dados...`;
+
+            // Converte os arquivos para string Base64 de forma limpa
+            const base64Antigo = await converterParaBase64(fileAntigo);
+            const base64Novo = await converterParaBase64(fileNovo);
+
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
                 <p style="margin:5px 0; font-size: 22px; color:#2c3e50;"><b>Nova Versão: <span style="color:#3498db;">v${tagVersaoFinal}</span></b></p>
                 <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
-                <p style="margin:5px 0 0 0; font-size: 13px; color:#4a5568;">Curso Vinculado: <span style="color:#2c3e50; font-weight:bold;">${certificacaoAtiva}</span></p>
             `;
 
+            if (listaTopicosMudancas.length === 0) listaTopicosMudancas.push("Ajustes gerais na apostila.");
+
+            // Grava tudo no Firestore (que é totalmente gratuito e não pede upgrade)
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
                 nomeArquivoOriginal: fileNovo.name,     
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
+                pdfAntigoBase64: base64Antigo, // Arquivo antigo em formato string
+                pdfNovoBase64: base64Novo,     // Arquivo novo em formato string
+                topicosMudancas: listaTopicosMudancas.slice(0, 5), 
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
@@ -165,19 +196,33 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
     }
 });
 
-// Carrega o histórico filtrado e atualiza em tempo real os indicadores de versão do menu lateral
+// Função para baixar o arquivo Base64 de volta para o computador como um PDF real
+window.baixarPdfDesdeBase64 = function(base64Data, nomeArquivo) {
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = nomeArquivo;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
     try {
         const q = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
         const querySnapshot = await getDocs(q);
         
-        // Dicionário temporário para rastrear a última versão estável de cada curso
         const ultimasVersoesMapeadas = {
             "CPA": "1.0.0", "C-Pro R": "1.0.0", "C-Pro I": "1.0.0", "CFG": "1.0.0",
             "CGA": "1.0.0", "CGE": "1.0.0", "CNPI Tec": "1.0.0", "CNPI Bra": "1.0.0",
             "CNPI Gl": "1.0.0", "Ancord": "1.0.0"
         };
+
+        Object.keys(ultimasVersoesMapeadas).forEach(curso => {
+            const idFormatado = `tag-${curso.replace(/\s+/g, '-')}`;
+            const elementoTag = document.getElementById(idFormatado);
+            if (elementoTag) elementoTag.innerText = "v1.0.0";
+        });
 
         if (querySnapshot.empty) {
             listaDiv.innerHTML = '<p class="placeholder">Nenhuma versão salva no Firebase ainda.</p>';
@@ -189,35 +234,54 @@ async function carregarHistorico() {
         
         querySnapshot.forEach((doc) => {
             const versao = doc.data();
+            const idDoc = doc.id;
             
-            // 1. Mapeia de forma inteligente a versão mais recente encontrada no banco de dados para cada curso
             if (versao.certificacao && ultimasVersoesMapeadas[versao.certificacao] === "1.0.0") {
                 ultimasVersoesMapeadas[versao.certificacao] = versao.versaoSemver;
             }
 
-            // 2. Executa o filtro de exibição do histórico na tela
             if (certificacaoAtiva !== "Geral" && versao.certificacao !== certificacaoAtiva) {
                 return; 
             }
 
             totalItensRenderizados++;
             const item = document.createElement('div');
-            item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
+            item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             
             const badgeCert = versao.certificacao ? `<span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao}</span>` : '';
+
+            let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568;">';
+            if (versao.topicosMudancas && Array.isArray(versao.topicosMudancas)) {
+                versao.topicosMudancas.forEach(t => {
+                    topicosHTML += `<li style="margin-bottom:2px;">${t}</li>`;
+                });
+            } else {
+                topicosHTML += `<li>Ajustes gerais na apostila.</li>`;
+            }
+            topicosHTML += '</ul>';
+
+            // Criação de botões com funções JavaScript nativas para baixar o PDF remontado na hora
+            const botaoAntigoHTML = versao.pdfAntigoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfAntigoBase64}', 'antigo_${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#e74c3c; font-size:11px; margin-top:5px;">📥 Baixar Antigo</button>` : '<span style="color:#999;">Sem arquivo</span>';
+            const botaoNovoHTML = versao.pdfNovoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfNovoBase64}', '${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#2ecc71; font-size:11px; margin-top:5px; margin-left:10px;">📥 Baixar Novo</button>` : '<span style="color:#999; margin-left:10px;">Sem arquivo</span>';
 
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
                 <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
-                <strong>Tipo:</strong> ${badgeCert} ${versao.tipoMudanca} <br>
-                <small style="color:#7f8c8d;">Salvo em: ${versao.data}</small>
+                <small style="color:#7f8c8d; font-weight: bold;">📅 Modificado em: ${versao.data}</small>
+                
+                <div style="margin: 10px 0; padding: 8px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
+                    <strong style="font-size: 13px; color:#2d3748;">📋 Resumo das Alterações:</strong>
+                    ${topicosHTML}
+                </div>
+
+                <div style="padding-top:5px; border-top:1px dashed #e2e8f0; font-size:13px; display:flex; align-items:center;">
+                    <strong style="margin-right:10px;">Arquivos Gravados:</strong> ${botaoAntigoHTML} ${botaoNovoHTML}
+                </div>
             `;
             listaDiv.appendChild(item);
         });
 
-        // 3. ATUALIZA OS CAMPOS DE VERSÃO NA SIDEBAR AUTOMATICAMENTE
         Object.keys(ultimasVersoesMapeadas).forEach(curso => {
-            // Converte os nomes com espaço ou caracteres especiais para bater com os IDs do HTML
             const idFormatado = `tag-${curso.replace(/\s+/g, '-')}`;
             const elementoTag = document.getElementById(idFormatado);
             if (elementoTag) {
