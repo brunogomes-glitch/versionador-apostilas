@@ -8,10 +8,9 @@
 </head>
 <body>
     <div class="main-wrapper">
-        <!-- Conteúdo Principal do Versionador -->
         <div class="container">
             <h1>Versionador de Apostilas</h1>
-            <p class="subtitle">Insira a nova versão do PDF. O sistema buscará a versão anterior no Firebase automaticamente.</p>
+            <p class="subtitle">Insira a nova versão do PDF. O sistema buscará a assinatura da versão anterior no Firebase automaticamente.</p>
             
             <div class="upload-section">
                 <div class="upload-box">
@@ -21,7 +20,6 @@
                 </div>
             </div>
 
-            <!-- Barra de Progresso Visível durante o processamento -->
             <div id="container-progresso" style="display: none; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a5568; margin-bottom: 5px;">
                     <span id="texto-progresso">Analisando documento...</span>
@@ -51,7 +49,6 @@
             </div>
         </div>
 
-        <!-- Menu Lateral Direito com as Tags de Versão -->
         <div class="sidebar-direito">
             <h2>Cursos / Certificações</h2>
             <p class="sidebar-subtitle">Selecione para filtrar ou vincular:</p>
@@ -103,9 +100,7 @@
         </div>
     </div>
 
-    <!-- Bibliotecas Necessárias -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     
     <script type="module" src="app.js"></script>
 </body>
