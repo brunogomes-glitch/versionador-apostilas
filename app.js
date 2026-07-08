@@ -1,326 +1,177 @@
-// CONFIGURAÇÃO DO SEU FIREBASE
-const firebaseConfig = {
-    apiKey: "AIzaSyD5N8D108XMCnWytT55XlcR6RE728S6qa5M",
-    authDomain: "versionador-apostilas.firebaseapp.com",
-    projectId: "versionador-apostilas",
-    storageBucket: "versionador-apostilas.firebasestorage.app",
-    messagingSenderId: "14543972647",
-    appId: "1:14543972647:web:1aadf3f86bbcdd1d2833b2",
-    measurementId: "G-2LDVJ25K10"
-};
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-const pdfjsLib = window['pdfjs-dist/build/pdf'];
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-let certificacaoAtiva = "Geral";
-
-// Transforma o PDF em Base64 para salvar direto no banco sem custos extras
-const converterParaBase64 = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-});
-
-window.addEventListener('DOMContentLoaded', () => {
-    carregarHistorico();
-    configurarMenuLateral();
-});
-
-function configurarMenuLateral() {
-    const botoes = document.querySelectorAll('.btn-certificacao');
-    botoes.forEach(botao => {
-        botao.addEventListener('click', () => {
-            botoes.forEach(b => b.classList.remove('active'));
-            botao.classList.add('active');
-            certificacaoAtiva = botao.getAttribute('data-cert');
-            carregarHistorico();
-        });
-    });
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f6f9;
+    color: #333;
+    margin: 0;
+    padding: 0;
 }
 
-// Alimenta dinamicamente a barra de progresso em tela
-function atualizarBarraProgresso(texto, porcentagem) {
-    const container = document.getElementById('container-progresso');
-    const txtElement = document.getElementById('texto-progresso');
-    const pctElement = document.getElementById('porcentagem-progresso');
-    const fillElement = document.getElementById('progress-bar-fill');
-    
-    container.style.display = 'block';
-    txtElement.innerText = texto;
-    pctElement.innerText = `${porcentagem}%`;
-    fillElement.style.width = `${porcentagem}%`;
+.main-wrapper {
+    display: flex;
+    min-height: 100vh;
 }
 
-document.getElementById('btn-comparar').addEventListener('click', async () => {
-    const fileAntigo = document.getElementById('pdf-antigo').files[0];
-    const fileNovo = document.getElementById('pdf-novo').files[0];
-    const btn = document.getElementById('btn-comparar');
-    const resultadoDiv = document.getElementById('resultado-diff');
+.container {
+    flex: 1;
+    max-width: 800px;
+    margin: 30px auto;
+    background: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
 
-    if (!fileAntigo || !fileNovo) {
-        alert('Por favor, selecione os dois arquivos PDF para processar.');
-        return;
-    }
+h1 {
+    margin-top: 0;
+    color: #2c3e50;
+    text-align: center;
+}
 
-    if (certificacaoAtiva === "Geral") {
-        alert('Por favor, selecione o Curso correspondente no menu da direita antes de versionar!');
-        return;
-    }
+.subtitle {
+    color: #7f8c8d;
+    text-align: center;
+    margin-bottom: 30px;
+}
 
-    btn.disabled = true;
-    btn.innerText = 'Processando...';
-    
-    atualizarBarraProgresso('Consultando histórico anterior...', 10);
-    resultadoDiv.innerHTML = 'Consultando histórico de versões anteriores...';
+.upload-section {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 25px;
+}
 
-    try {
-        const qHistorico = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
-        const snapshotHistorico = await getDocs(qHistorico);
-        let versaoBaseCalculada = "1.0.0"; 
+.upload-box {
+    flex: 1;
+    border: 2px dashed #bdc3c7;
+    padding: 20px;
+    border-radius: 6px;
+    text-align: center;
+    background: #fafafa;
+}
 
-        snapshotHistorico.forEach((doc) => {
-            const registro = doc.data();
-            if (versaoBaseCalculada === "1.0.0" && registro.nomeArquivoOriginal === fileAntigo.name) {
-                versaoBaseCalculada = registro.versaoSemver;
-            }
-        });
+#btn-comparar {
+    width: 100%;
+    padding: 15px;
+    background-color: #2c3e50;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background 0.2s;
+}
 
-        atualizarBarraProgresso('Carregando os arquivos PDF...', 20);
-        resultadoDiv.innerHTML = `Lendo arquivos...`;
+#btn-comparar:hover {
+    background-color: #1a252f;
+}
 
-        const arrayBufferAntigo = await fileAntigo.arrayBuffer();
-        const arrayBufferNovo = await fileNovo.arrayBuffer();
-        
-        const pdfAntigo = await pdfjsLib.getDocument({ data: arrayBufferAntigo }).promise;
-        const pdfNovo = await pdfjsLib.getDocument({ data: arrayBufferNovo }).promise;
+#btn-comparar:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
 
-        const totalPaginas = Math.max(pdfAntigo.numPages, pdfNovo.numPages);
-        
-        let listaTopicosMudancas = [];
-        let contemAdicao = false;
-        let contemRemocao = false;
+/* DESIGN DA BARRA DE PROGRESSO */
+.progress-bar-bg {
+    width: 100%;
+    background-color: #e2e8f0;
+    border-radius: 9999px;
+    height: 10px;
+    overflow: hidden;
+}
 
-        // Distribui o progresso das páginas dinamicamente entre 20% e 75%
-        for (let i = 1; i <= totalPaginas; i++) {
-            const pctCalculado = Math.floor(20 + ((i / totalPaginas) * 55));
-            atualizarBarraProgresso(`Analisando: Página ${i} de ${totalPaginas}`, pctCalculado);
+#progress-bar-fill {
+    width: 0%;
+    height: 100%;
+    background-color: #3498db;
+    transition: width 0.1s ease;
+    border-radius: 9999px;
+}
 
-            let textoAntigoPagina = '';
-            let textoNovoPagina = '';
+.result-section {
+    margin-top: 30px;
+}
 
-            if (i <= pdfAntigo.numPages) {
-                const pagina = await pdfAntigo.getPage(i);
-                const conteudo = await pagina.getTextContent();
-                textoAntigoPagina = conteudo.items.map(item => item.str).join(' ');
-            }
+.diff-box {
+    background: #f8f9fa;
+    border: 1px solid #e2e8f0;
+    padding: 20px;
+    border-radius: 6px;
+    min-height: 80px;
+    line-height: 1.6;
+}
 
-            if (i <= pdfNovo.numPages) {
-                const pagina = await pdfNovo.getPage(i);
-                const conteudo = await pagina.getTextContent();
-                textoNovoPagina = conteudo.items.map(item => item.str).join(' ');
-            }
+.placeholder {
+    color: #a0aec0;
+}
 
-            const diferencasPagina = Diff.diffWords(textoAntigoPagina, textoNovoPagina);
-            let trechosAdicionados = [];
-            let trechosRemovidos = [];
+.sidebar-direito {
+    width: 290px;
+    background-color: #ffffff;
+    border-left: 1px solid #e2e8f0;
+    padding: 25px 20px;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.03);
+}
 
-            diferencasPagina.forEach((part) => {
-                if (part.added) {
-                    contemAdicao = true;
-                    if (part.value.trim().length > 3) trechosAdicionados.push(part.value.trim());
-                }
-                if (part.removed) {
-                    contemRemocao = true;
-                    if (part.value.trim().length > 3) trechosRemovidos.push(part.value.trim());
-                }
-            });
+.sidebar-direito h2 {
+    font-size: 20px;
+    color: #2c3e50;
+    margin-top: 0;
+    margin-bottom: 5px;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+}
 
-            if (trechosRemovidos.length > 0) {
-                listaTopicosMudancas.push(`Pág. ${i}: Remoção de "${trechosRemovidos.join(' | ').substring(0, 50)}..."`);
-            }
-            if (trechosAdicionados.length > 0) {
-                listaTopicosMudancas.push(`Pág. ${i}: Inclusão de "${trechosAdicionados.join(' | ').substring(0, 50)}..."`);
-            }
-        }
+.sidebar-subtitle {
+    font-size: 13px;
+    color: #7f8c8d;
+    margin-bottom: 20px;
+}
 
-        let mudancaDetectada = "Nenhuma";
-        let tagVersaoFinal = versaoBaseCalculada;
+.lista-certificacoes {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
 
-        if (contemAdicao) {
-            let partes = versaoBaseCalculada.split('.');
-            let major = parseInt(partes[0]) || 1;
-            let minor = parseInt(partes[1]) || 0;
-            minor += 1;
-            tagVersaoFinal = `${major}.${minor}.0`;
-            mudancaDetectada = "MINOR (Conteúdo Adicionado)";
-        } else if (contemRemocao) {
-            let partes = versaoBaseCalculada.split('.');
-            let major = parseInt(partes[0]) || 1;
-            let minor = parseInt(partes[1]) || 0;
-            let patch = parseInt(partes[2]) || 0;
-            patch += 1;
-            tagVersaoFinal = `${major}.${minor}.${patch}`;
-            mudancaDetectada = "PATCH (Pequenas Correções/Remoções)";
-        }
+.btn-certificacao {
+    width: 100%;
+    padding: 12px 15px;
+    background-color: #f8f9fa;
+    color: #4a5568;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
 
-        if (mudancaDetectada === "Nenhuma") {
-            document.getElementById('container-progresso').style.display = 'none';
-            resultadoDiv.innerHTML = `
-                <p style="margin:0; font-weight:bold; color:#27ae60;">✓ Os arquivos são idênticos!</p>
-                <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
-            `;
-        } else {
-            atualizarBarraProgresso('Empacotando e compactando arquivos físicos...', 85);
-            resultadoDiv.innerHTML = `Processando arquivos...`;
+.btn-certificacao:hover {
+    background-color: #edf2f7;
+    color: #2d3748;
+}
 
-            const base64Antigo = await converterParaBase64(fileAntigo);
-            const base64Novo = await converterParaBase64(fileNovo);
+.btn-certificacao.active {
+    background-color: #3498db;
+    color: white;
+    border-color: #3498db;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
 
-            atualizarBarraProgresso('Salvando dados na nuvem do Firebase...', 95);
+.versao-tag {
+    background-color: #e2e8f0;
+    color: #4a5568;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+}
 
-            if (listaTopicosMudancas.length === 0) listaTopicosMudancas.push("Ajustes gerais na apostila.");
-
-            await addDoc(collection(db, "versoes"), {
-                nomeArquivo: fileNovo.name,             
-                nomeArquivoOriginal: fileNovo.name,     
-                versaoSemver: tagVersaoFinal,
-                tipoMudanca: mudancaDetectada,
-                certificacao: certificacaoAtiva, 
-                pdfAntigoBase64: base64Antigo, 
-                pdfNovoBase64: base64Novo,     
-                topicosMudancas: listaTopicosMudancas.slice(0, 5), 
-                data: new Date().toLocaleString('pt-BR'),
-                timestamp: new Date()
-            });
-
-            atualizarBarraProgresso('Concluído!', 100);
-            
-            resultadoDiv.innerHTML = `
-                <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
-                <p style="margin:5px 0; font-size: 22px; color:#3498db;"><b>Nova Versão: <span style="color:#2c3e50;">v${tagVersaoFinal}</span></b></p>
-                <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
-            `;
-
-            carregarHistorico();
-            
-            setTimeout(() => {
-                document.getElementById('container-progresso').style.display = 'none';
-            }, 2000);
-        }
-
-    } catch (error) {
-        console.error(error);
-        document.getElementById('container-progresso').style.display = 'none';
-        resultadoDiv.innerHTML = `<span style="color:red;">Erro no processamento: ${error.message}</span>`;
-    } finally {
-        btn.disabled = false;
-        btn.innerText = 'Versionar Documento';
-    }
-});
-
-// Executa a reconstrução e download do PDF armazenado a partir do texto Base64
-window.baixarPdfDesdeBase64 = function(base64Data, nomeArquivo) {
-    const link = document.createElement('a');
-    link.href = base64Data;
-    link.download = nomeArquivo;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
-
-async function carregarHistorico() {
-    const listaDiv = document.getElementById('lista-historico');
-    try {
-        const q = query(collection(db, "versoes"), orderBy("timestamp", "desc"));
-        const querySnapshot = await getDocs(q);
-        
-        const ultimasVersoesMapeadas = {
-            "CPA": "1.0.0", "C-Pro R": "1.0.0", "C-Pro I": "1.0.0", "CFG": "1.0.0",
-            "CGA": "1.0.0", "CGE": "1.0.0", "CNPI Tec": "1.0.0", "CNPI Bra": "1.0.0",
-            "CNPI Gl": "1.0.0", "Ancord": "1.0.0"
-        };
-
-        Object.keys(ultimasVersoesMapeadas).forEach(curso => {
-            const idFormatado = `tag-${curso.replace(/\s+/g, '-')}`;
-            const elementoTag = document.getElementById(idFormatado);
-            if (elementoTag) elementoTag.innerText = "v1.0.0";
-        });
-
-        if (querySnapshot.empty) {
-            listaDiv.innerHTML = '<p class="placeholder">Nenhuma versão salva no Firebase ainda.</p>';
-            return;
-        }
-
-        let totalItensRenderizados = 0;
-        listaDiv.innerHTML = '';
-        
-        querySnapshot.forEach((doc) => {
-            const versao = doc.data();
-            
-            if (versao.certificacao && ultimasVersoesMapeadas[versao.certificacao] === "1.0.0") {
-                ultimasVersoesMapeadas[versao.certificacao] = versao.versaoSemver;
-            }
-
-            if (certificacaoAtiva !== "Geral" && versao.certificacao !== certificacaoAtiva) {
-                return; 
-            }
-
-            totalItensRenderizados++;
-            const item = document.createElement('div');
-            item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
-            
-            const badgeCert = versao.certificacao ? `<span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao}</span>` : '';
-
-            let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568;">';
-            if (versao.topicosMudancas && Array.isArray(versao.topicosMudancas)) {
-                versao.topicosMudancas.forEach(t => {
-                    topicosHTML += `<li style="margin-bottom:2px;">${t}</li>`;
-                });
-            } else {
-                topicosHTML += `<li>Ajustes gerais na apostila.</li>`;
-            }
-            topicosHTML += '</ul>';
-
-            const botaoAntigoHTML = versao.pdfAntigoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfAntigoBase64}', 'antigo_${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#e74c3c; font-size:11px; margin-top:5px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Antigo</button>` : '<span style="color:#999;">Sem arquivo</span>';
-            const botaoNovoHTML = versao.pdfNovoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfNovoBase64}', '${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#2ecc71; font-size:11px; margin-top:5px; margin-left:10px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Novo</button>` : '<span style="color:#999; margin-left:10px;">Sem arquivo</span>';
-
-            item.innerHTML = `
-                <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
-                <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
-                <small style="color:#7f8c8d; font-weight: bold;">📅 Modificado em: ${versao.data}</small>
-                
-                <div style="margin: 10px 0; padding: 8px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
-                    <strong style="font-size: 13px; color:#2d3748;">📋 Resumo das Alterações:</strong>
-                    ${topicosHTML}
-                </div>
-
-                <div style="padding-top:5px; border-top:1px dashed #e2e8f0; font-size:13px; display:flex; align-items:center;">
-                    <strong style="margin-right:10px;">Arquivos Gravados:</strong> ${botaoAntigoHTML} ${botaoNovoHTML}
-                </div>
-            `;
-            listaDiv.appendChild(item);
-        });
-
-        Object.keys(ultimasVersoesMapeadas).forEach(curso => {
-            const idFormatado = `tag-${curso.replace(/\s+/g, '-')}`;
-            const elementoTag = document.getElementById(idFormatado);
-            if (elementoTag) {
-                elementoTag.innerText = `v${ultimasVersoesMapeadas[curso]}`;
-            }
-        });
-
-        if (totalItensRenderizados === 0) {
-            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>`;
-        }
-    } catch (e) {
-        console.error(e);
-        listaDiv.innerHTML = '<p style="color: red;">Erro ao carregar o histórico.</p>';
-    }
+.btn-certificacao.active .versao-tag {
+    background-color: rgba(255, 255, 255, 0.25);
+    color: #fff;
 }
