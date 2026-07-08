@@ -20,7 +20,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let certificacaoAtiva = "Geral";
 
-// Função matemática rápida (djb2) para transformar o texto pesado de uma página em um código único de 8 letras
+// Função matemática para gerar um código curto representativo do texto da página
 function gerarAssinaturaTexto(str) {
     let hash = 5381;
     for (let i = 0; i < str.length; i++) {
@@ -191,10 +191,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
             if (listaTopicosMudancas.length === 0 && tagVersaoFinal !== "1.0.0") {
                 listaTopicosMudancas.push("Modificações gerais de formatação.");
             } else if (tagVersaoFinal === "1.0.0") {
-                listaTopicosMudancas.push("Primeiro registro estável desta apostila no sistema.");
+                listaTopicosMudancas.push("Primeiro registro oficial estável desta apostila no sistema.");
             }
 
-            // Captura a data e hora atualizada no formato do Brasil
             const dataHoraAtual = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
             await addDoc(collection(db, "versoes"), {
@@ -205,7 +204,7 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 certificacao: certificacaoAtiva, 
                 topicosMudancas: listaTopicosMudancas, 
                 mapaAssinaturas: mapaAssinaturasNovas, 
-                data: dataHoraAtual, // Garante que a data está salva como string legível
+                data: dataHoraAtual, 
                 timestamp: new Date()
             });
 
@@ -275,7 +274,6 @@ async function carregarHistorico() {
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             
-            // Renderiza de forma rica os tópicos de alterações salvos
             let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568; line-height: 1.5;">';
             if (versao.topicosMudancas && Array.isArray(versao.topicosMudancas)) {
                 versao.topicosMudancas.forEach(t => {
@@ -286,7 +284,6 @@ async function carregarHistorico() {
             }
             topicosHTML += '</ul>';
 
-            // Exibe explicitamente o arquivo, a data salva e os tópicos mapeados
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
                 <span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao || 'Geral'}</span>
@@ -310,7 +307,7 @@ async function carregarHistorico() {
         });
 
         if (totalItensRenderizados === 0) {
-            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>';
+            listaDiv.innerHTML = `<p class="placeholder">Nenhum histórico de versão encontrado para o curso <b>${certificacaoAtiva}</b>.</p>`;
         }
     } catch (e) {
         console.error(e);
