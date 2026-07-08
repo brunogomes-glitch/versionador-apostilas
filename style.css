@@ -35,17 +35,17 @@ h1 {
 
 .upload-section {
     display: flex;
-    gap: 20px;
+    justify-content: center;
     margin-bottom: 25px;
 }
 
 .upload-box {
-    flex: 1;
-    border: 2px dashed #bdc3c7;
-    padding: 20px;
+    width: 100%;
+    border: 2px dashed #3498db;
+    padding: 25px;
     border-radius: 6px;
     text-align: center;
-    background: #fafafa;
+    background: #fdfefe;
 }
 
 #btn-comparar {
@@ -70,7 +70,6 @@ h1 {
     cursor: not-allowed;
 }
 
-/* DESIGN DA BARRA DE PROGRESSO */
 .progress-bar-bg {
     width: 100%;
     background-color: #e2e8f0;
