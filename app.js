@@ -20,14 +20,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let certificacaoAtiva = "Geral";
 
-// Transforma o PDF em Base64 para salvar direto no banco sem custos extras
-const converterParaBase64 = (file) => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = (error) => reject(error);
-});
-
 window.addEventListener('DOMContentLoaded', () => {
     carregarHistorico();
     configurarMenuLateral();
@@ -45,7 +37,6 @@ function configurarMenuLateral() {
     });
 }
 
-// Alimenta dinamicamente a barra de progresso em tela
 function atualizarBarraProgresso(texto, porcentagem) {
     const container = document.getElementById('container-progresso');
     const txtElement = document.getElementById('texto-progresso');
@@ -107,7 +98,6 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         let contemAdicao = false;
         let contemRemocao = false;
 
-        // Distribui o progresso das páginas dinamicamente entre 20% e 75%
         for (let i = 1; i <= totalPaginas; i++) {
             const pctCalculado = Math.floor(20 + ((i / totalPaginas) * 55));
             atualizarBarraProgresso(`Analisando: Página ${i} de ${totalPaginas}`, pctCalculado);
@@ -177,15 +167,39 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 <p style="margin:5px 0 0 0; font-size:14px; color:#555;">Permanecendo na versão atual estável: <b>v${versaoBaseCalculada}</b></p>
             `;
         } else {
-            atualizarBarraProgresso('Empacotando e compactando arquivos físicos...', 85);
-            resultadoDiv.innerHTML = `Processando arquivos...`;
-
-            const base64Antigo = await converterParaBase64(fileAntigo);
-            const base64Novo = await converterParaBase64(fileNovo);
-
-            atualizarBarraProgresso('Salvando dados na nuvem do Firebase...', 95);
+            // NOVA ETAPA: Montando estoque ZIP físico para baixar localmente
+            atualizarBarraProgresso('Estocando PDFs em pacote comprimido (ZIP)...', 80);
 
             if (listaTopicosMudancas.length === 0) listaTopicosMudancas.push("Ajustes gerais na apostila.");
+
+            const zip = new JSZip();
+            const pastaCurso = zip.folder(`${certificacaoAtiva}_v${tagVersaoFinal}`);
+            
+            // Adiciona os arquivos brutos para estocagem
+            pastaCurso.file(`1_VERSAO_ANTERIOR_v${versaoBaseCalculada}.pdf`, fileAntigo);
+            pastaCurso.file(`2_NOVA_VERSAO_v${tagVersaoFinal}.pdf`, fileNovo);
+            
+            // Adiciona o relatório em texto descritivo
+            let relatorioTexto = `RELATÓRIO DE VERSIONAMENTO - ${certificacaoAtiva}\n`;
+            relatorioTexto += `Data: ${new Date().toLocaleString('pt-BR')}\n`;
+            relatorioTexto += `Versão Base: v${versaoBaseCalculada} -> Nova Versão: v${tagVersaoFinal}\n`;
+            relatorioTexto += `Tipo de Alteração: ${mudancaDetectada}\n\n`;
+            relatorioTexto += `TÓPICOS DETECTADOS:\n`;
+            listaTopicosMudancas.forEach(t => relatorioTexto += `- ${t}\n`);
+            
+            pastaCurso.file("resumo_alteracoes.txt", relatorioTexto);
+
+            // Dispara download do ZIP estocado no navegador
+            const conteudoZip = await zip.generateAsync({ type: "blob" });
+            const linkDownload = document.createElement('a');
+            linkDownload.href = URL.createObjectURL(conteudoZip);
+            linkDownload.download = `Estoque_${certificacaoAtiva}_v${tagVersaoFinal}.zip`;
+            document.body.appendChild(linkDownload);
+            linkDownload.click();
+            document.body.removeChild(linkDownload);
+
+            // Gravando dados leves na nuvem (Histórico do site)
+            atualizarBarraProgresso('Salvando dados históricos na nuvem...', 95);
 
             await addDoc(collection(db, "versoes"), {
                 nomeArquivo: fileNovo.name,             
@@ -193,19 +207,18 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
                 versaoSemver: tagVersaoFinal,
                 tipoMudanca: mudancaDetectada,
                 certificacao: certificacaoAtiva, 
-                pdfAntigoBase64: base64Antigo, 
-                pdfNovoBase64: base64Novo,     
                 topicosMudancas: listaTopicosMudancas.slice(0, 5), 
                 data: new Date().toLocaleString('pt-BR'),
                 timestamp: new Date()
             });
 
-            atualizarBarraProgresso('Concluído!', 100);
+            atualizarBarraProgresso('Concluído e Estocado!', 100);
             
             resultadoDiv.innerHTML = `
                 <p style="margin:0; font-size: 15px; color:#7f8c8d;">Versão Anterior: v${versaoBaseCalculada}</p>
                 <p style="margin:5px 0; font-size: 22px; color:#3498db;"><b>Nova Versão: <span style="color:#2c3e50;">v${tagVersaoFinal}</span></b></p>
                 <p style="margin:5px 0; font-size: 14px; color:#e67e22;">Tipo de Incremento: <b>${mudancaDetectada}</b></p>
+                <p style="margin:10px 0 0 0; font-size: 13px; color:#27ae60; font-weight:bold;">✓ Pacote ZIP de estocagem baixado automaticamente!</p>
             `;
 
             carregarHistorico();
@@ -221,19 +234,9 @@ document.getElementById('btn-comparar').addEventListener('click', async () => {
         resultadoDiv.innerHTML = `<span style="color:red;">Erro no processamento: ${error.message}</span>`;
     } finally {
         btn.disabled = false;
-        btn.innerText = 'Versionar Documento';
+        btn.innerText = 'Versionar e Estocar Documento';
     }
 });
-
-// Executa a reconstrução e download do PDF armazenado a partir do texto Base64
-window.baixarPdfDesdeBase64 = function(base64Data, nomeArquivo) {
-    const link = document.createElement('a');
-    link.href = base64Data;
-    link.download = nomeArquivo;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
 
 async function carregarHistorico() {
     const listaDiv = document.getElementById('lista-historico');
@@ -276,8 +279,6 @@ async function carregarHistorico() {
             const item = document.createElement('div');
             item.style = "background: #f8f9fa; padding: 15px; border-radius: 6px; margin-bottom: 12px; border-left: 4px solid #2c3e50; box-shadow: 0 1px 3px rgba(0,0,0,0.05);";
             
-            const badgeCert = versao.certificacao ? `<span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao}</span>` : '';
-
             let topicosHTML = '<ul style="margin: 5px 0 0 0; padding-left: 20px; font-size: 13px; color:#4a5568;">';
             if (versao.topicosMudancas && Array.isArray(versao.topicosMudancas)) {
                 versao.topicosMudancas.forEach(t => {
@@ -288,21 +289,15 @@ async function carregarHistorico() {
             }
             topicosHTML += '</ul>';
 
-            const botaoAntigoHTML = versao.pdfAntigoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfAntigoBase64}', 'antigo_${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#e74c3c; font-size:11px; margin-top:5px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Antigo</button>` : '<span style="color:#999;">Sem arquivo</span>';
-            const botaoNovoHTML = versao.pdfNovoBase64 ? `<button onclick="window.baixarPdfDesdeBase64('${versao.pdfNovoBase64}', '${versao.nomeArquivo}')" style="width:auto; padding:4px 10px; background:#2ecc71; font-size:11px; margin-top:5px; margin-left:10px; border-radius:4px; border:none; color:white; cursor:pointer;">📥 Baixar Novo</button>` : '<span style="color:#999; margin-left:10px;">Sem arquivo</span>';
-
             item.innerHTML = `
                 <span style="background: #2c3e50; color: #fff; padding: 2px 8px; font-size: 13px; font-weight: bold; border-radius: 3px; float: right;">v${versao.versaoSemver}</span>
+                <span style="background: #e2e8f0; color: #4a5568; padding: 2px 6px; font-size: 11px; font-weight: bold; border-radius: 3px; margin-right: 5px;">${versao.certificacao || 'Geral'}</span>
                 <strong>Apostila:</strong> ${versao.nomeArquivo} <br>
                 <small style="color:#7f8c8d; font-weight: bold;">📅 Modificado em: ${versao.data}</small>
                 
                 <div style="margin: 10px 0; padding: 8px; background: #fff; border: 1px solid #edf2f7; border-radius: 4px;">
-                    <strong style="font-size: 13px; color:#2d3748;">📋 Resumo das Alterações:</strong>
+                    <strong style="font-size: 13px; color:#2d3748;">📋 Resumo das Alterações calculadas:</strong>
                     ${topicosHTML}
-                </div>
-
-                <div style="padding-top:5px; border-top:1px dashed #e2e8f0; font-size:13px; display:flex; align-items:center;">
-                    <strong style="margin-right:10px;">Arquivos Gravados:</strong> ${botaoAntigoHTML} ${botaoNovoHTML}
                 </div>
             `;
             listaDiv.appendChild(item);
