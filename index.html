@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Versionador de Apostilas com Armazenamento Gratuito</title>
+    <title>Versionador de Apostilas Pro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="main-wrapper">
         <div class="container">
             <h1>Versionador de Apostilas</h1>
-            <p class="subtitle">Insira os PDFs para calcular a versão, analisar as mudanças e guardá-los de forma 100% gratuita.</p>
+            <p class="subtitle">Insira os PDFs para calcular a versão, analisar as mudanças em tempo real e guardá-los em segurança.</p>
             
             <div class="upload-section">
                 <div class="upload-box">
@@ -20,6 +20,16 @@
                 <div class="upload-box">
                     <h3>2. Nova Versão (Atualizada)</h3>
                     <input type="file" id="pdf-novo" accept=".pdf">
+                </div>
+            </div>
+
+            <div id="container-progresso" style="display: none; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #4a5568; margin-bottom: 5px;">
+                    <span id="texto-progresso">Processando páginas...</span>
+                    <span id="porcentagem-progresso">0%</span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div id="progress-bar-fill"></div>
                 </div>
             </div>
 
